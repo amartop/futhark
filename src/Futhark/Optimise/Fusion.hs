@@ -277,7 +277,7 @@ tryFuseNodesInGraph node_1 node_2 g
             else do
               new_stm <- makeCopies stm
               contractEdge node_2 (inputs, node_1, SNode new_stm mempty, outputs) g
-          Just _ -> error "should not happen"
+          Just _ -> error "fuseContexts did not return an SNode"
           Nothing -> pure g
       else pure g
     where
@@ -318,7 +318,7 @@ makeCopies s@(Let _ _ (Op (Futhark.Screma _ _  (ScremaForm _ _ lam)))) =
 makeCopies stm = pure stm
 
 makeCopiesInStm :: [VName] -> Stm SOACS -> FusionEnvM (Stm SOACS)
-makeCopiesInStm toCopy (Let sz os (Op (Screma szi is (Futhark.ScremaForm scan red lam)))) =
+makeCopiesInStm toCopy (Let sz os (Op st@(Screma szi is (Futhark.ScremaForm scan red lam)))) =
   do
     newLam <- makeCopiesInLambda toCopy lam
     pure $ Let sz os (Op (Screma szi is (Futhark.ScremaForm scan red newLam)))
@@ -328,6 +328,8 @@ makeCopiesInStm _ s = pure s
 makeCopiesInLambda :: [VName] -> Lambda SOACS -> FusionEnvM (Lambda SOACS)
 makeCopiesInLambda toCopy lam =
   do
+    oldScope <- gets scope
+    modify (\s -> s {scope = M.union (scopeOf lam) oldScope})
     (copies, nameMap) <- makeCopyStms toCopy
     let l_body = lambdaBody lam
     let newBody = insertStms (stmsFromList copies) (substituteNames nameMap l_body)
@@ -527,7 +529,7 @@ resFromLambda =  bodyResult . lambdaBody
 hFuseStms :: Stm SOACS -> Stm SOACS -> Maybe (Stm SOACS)
 hFuseStms s1 s2 = case (s1, s2) of
   (Let pats1 _ (Op Futhark.Screma {}),
-   Let _ _ (Op Futhark.Screma {})) -> fuseStms (patNames pats1) s1 s2
+   Let _     _ (Op Futhark.Screma {})) -> fuseStms (patNames pats1) s1 s2
   (Let pats1 aux1 (Op (Futhark.Scatter s_exp1 i1 lam_1 outputs1)),
    Let pats2 aux2 (Op (Futhark.Scatter s_exp2 i2 lam_2 outputs2)))
    | s_exp1 == s_exp2 ->
@@ -539,7 +541,7 @@ hFuseStms s1 s2 = case (s1, s2) of
         --o1 = patNames pats1
 
         (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
-        (lam_1_output, lam_2_output) = mapT (namesFromRes . resFromLambda) (lam_1, lam_2)
+        (lam_1_output, lam_2_output) = mapT resFromLambda (lam_1, lam_2)
 
         fused_inputs = fuseInputs2 [] i1 i2
         fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
@@ -691,6 +693,12 @@ runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
       modify (\s -> s {scope = M.union (scopeOfFParams (map fst params)) oldScope})
       b_new <- doFusionInner body (map (paramName . fst) params)
       return (incomming, node, SNode (Let pats aux (DoLoop params form b_new)) mempty, outgoing)
+  SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] lambda)))) _ ->
+    do
+      newbody <- doFusionInner (lambdaBody lambda) []
+      let newLam = lambda {lambdaBody = newbody}
+      let nodeNew = SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] newLam)))) mempty
+      pure (incomming, node, nodeNew, outgoing)
   _ -> return c
   where
     doFusionInner :: Body SOACS -> [VName] -> FusionEnvM (Body SOACS)

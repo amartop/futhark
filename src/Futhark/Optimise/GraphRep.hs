@@ -37,7 +37,6 @@ import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSou
 --import Futhark.Pass
 import Data.Foldable (foldlM)
 import Control.Monad.State
---import Futhark.CodeGen.Backends.CCUDA.Boilerplate (failureSwitch)
 
 
 
@@ -329,7 +328,7 @@ addCons = augWithFun getStmCons
 -- Merges two contexts
 mergedContext :: (Eq b) => a -> Context a b -> Context a b -> Context a b
 mergedContext mergedlabel (inp1, n1, _, out1) (inp2, n2, _, out2) =
-  let new_inp  = L.nub $ filter (\n -> snd n /= n1 && snd n /= n2) (inp1  `L.union` inp2) in
+  let new_inp = L.nub $ filter (\n -> snd n /= n1 && snd n /= n2) (inp1  `L.union` inp2) in
   let new_out = L.nub $ filter (\n -> snd n /= n1 && snd n /= n2) (out1 `L.union` out2)
   in (new_inp, n1, mergedlabel, new_out)
   -- update keys of gen n2 with n1
@@ -452,7 +451,7 @@ namesFromRes = concatMap ((\case
      Var z -> [z]
      Constant _ -> []
   ) . resSubExp)
-
+-- THIS IS BUGGY!!!! Constants are yeeted from lambda outputs after fusion
 
 
 getOutputs :: NodeT -> [VName]
