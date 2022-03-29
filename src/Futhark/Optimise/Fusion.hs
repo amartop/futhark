@@ -71,9 +71,9 @@ fuseSOACs =
   Pass
     { passName = "Fuse SOACs",
       passDescription = "Perform higher-order optimisation, i.e., fusion.",
-      passFunction = pure-- \p -> intraproceduralTransformationWithConsts
-          --(fuseConsts (namesToList $ freeIn (progFuns p)))
-          --fuseFun p
+      passFunction = \p -> intraproceduralTransformationWithConsts
+          (fuseConsts (namesToList $ freeIn (progFuns p)))
+          fuseFun p
           -- (\y x -> pure x)
     }
 
