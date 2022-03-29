@@ -71,9 +71,9 @@ fuseSOACs =
   Pass
     { passName = "Fuse SOACs",
       passDescription = "Perform higher-order optimisation, i.e., fusion.",
-      passFunction = \p -> intraproceduralTransformationWithConsts
-          (fuseConsts (namesToList $ freeIn (progFuns p)))
-          fuseFun p
+      passFunction = pure-- \p -> intraproceduralTransformationWithConsts
+          --(fuseConsts (namesToList $ freeIn (progFuns p)))
+          --fuseFun p
           -- (\y x -> pure x)
     }
 
@@ -145,12 +145,17 @@ linearizeGraph g = concatMap stmFromNode $ reverse $ Q.topsort' g
 doAllFusion :: DepGraphAug
 doAllFusion = applyAugs [keepTrying doMapFusion, doHorizontalFusion, removeUnusedOutputs, makeCopiesOfConsAliased, runInnerFusion]
 
--- doInnerFusion :: DepGraphAug
--- doInnerFusion g = pure g
-
-
--- map-fusion part
-
+-- perfectMapNest :: Stm SOACS -> Int
+-- perfectMapNest = perfectMapNest' 0 
+--   where
+--   perfectMapNest' :: Int -> Stm SOACS -> Int
+--   perfectMapNest' n (Let _ _ expr) = 
+--     case expr of
+--       Op (Futhark.Screma _lenexp _vnames (ScremaForm [] [] lam)) ->
+--         let lamstms = stmsToList $ bodyStms $ lambdaBody lam in
+--         let m = map (perfectMapNest' (n+1)) lamstms
+--         in minimum m
+--       _ -> n
 
 
 
