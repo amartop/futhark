@@ -37,6 +37,8 @@ import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSou
 --import Futhark.Pass
 import Data.Foldable (foldlM)
 import Control.Monad.State
+import Futhark.Analysis.HORep.SOAC (SOAC)
+import qualified Futhark.Analysis.HORep.SOAC as SOAC
 
 
 
@@ -56,9 +58,7 @@ data EdgeT = Alias VName
 data StmData = StmData {
   sPats :: Pat (LetDec SOACS),
   saux :: StmAux (ExpDec SOACS),
-  toCopy :: [VName],
-  -- do not trust this!
-  oldStm :: Stm SOACS
+  toCopy :: [VName]
   -- possibly transforms
 } deriving (Eq, Ord)
 
@@ -74,6 +74,9 @@ data NodeT =
   | RNode  VName
   | InNode VName
   deriving (Eq)
+
+-- all the nodes to the outside somehow have to be generated on the
+
 
 
 instance Show EdgeT where
@@ -121,7 +124,7 @@ instance Show NodeT where
 
 nodeFromStm :: Stm SOACS -> FusionEnvM NodeT
 nodeFromStm stm@(Let pats aux exp) =
-  let stmData = StmData pats aux [] stm in
+  let stmData = StmData pats aux [] in
     case exp of
       Op soac -> do
         soac <- HOREPSOAC.fromExp exp
@@ -146,7 +149,7 @@ type DepContext = Context NodeT EdgeT
 type DepGraph = G.Gr NodeT EdgeT
 
 -- depGenerators can be used to make edgeGenerators
-type DepGenerator = Stm SOACS -> [VName]
+type DepGenerator = NodeT -> [VName]
 -- for each node, what producer should the node depend on and what type
 type EdgeGenerator = NodeT -> [(VName, EdgeT)]
 
@@ -466,34 +469,36 @@ makeScanInfusible g = return $ emap change_node_to_idep g
 -- find dependencies - either fusable or infusable. edges are generated based on these
 
 
-fusableInputs :: Stm SOACS -> [VName]
-fusableInputs (Let _ _ expr) = fusableInputsFromExp expr
+fusableInputs :: DepGenerator
+fusableInputs (SoacNode sdata soac) = fusableInputsFromExp soac
+fusableInputs _ = []
 
-fusableInputsFromExp :: Exp SOACS -> [VName]
-fusableInputsFromExp (Op soac) = case soac of
-  Futhark.Screma  _ is _     -> is
-  Futhark.Hist    _ is _ _   -> is
-  Futhark.Scatter _ is _ _   -> is
-  Futhark.Stream  _ is _ _ _ -> is
-fusableInputsFromExp _ = []
+fusableInputsFromExp :: SOAC.SOAC SOACS -> [VName]
+fusableInputsFromExp soac = map SOAC.inputArray (SOAC.inputs soac)
 
-infusableInputs :: Stm SOACS -> [VName]
-infusableInputs (Let _ aux expr) = infusableInputsFromExp expr ++ namesToList (freeIn aux)
 
-infusableInputsFromExp :: Exp SOACS -> [VName]
-infusableInputsFromExp (Op soac) = case soac of
-  Futhark.Screma  e _ s  ->
-    namesToList $ freeIn $ Futhark.Screma e [] s
-  Futhark.Hist    e _ histops lam ->
-    namesToList $ freeIn $ Futhark.Hist e [] histops lam
-  Futhark.Scatter e _ lam other       ->
-    namesToList $ freeIn $ Futhark.Scatter e [] lam other
-  Futhark.Stream  a1 _ a3 a4 lam     ->
-    namesToList $ freeIn $ Futhark.Stream a1 [] a3 a4 lam
--- infusableInputsFromExp op@(BasicOp x) = namesToList $ freeIn op
--- infusableInputsFromExp op@If {} = namesToList $ freeIn op
--- infusableInputsFromExp op@DoLoop {} = namesToList $ freeIn op
-infusableInputsFromExp op = namesToList $ freeIn op
+infusableInputs :: DepGenerator
+infusableInputs (SoacNode sdata soac) =
+  infusableInputsFromSoac soac ++ namesToList (freeIn (saux sdata))
+infusableInputs _ = [] -- if and loops
+
+infusableInputsFromSoac :: SOAC.SOAC SOACS -> [VName]
+infusableInputsFromSoac soac = namesToList $ freeIn $ SOAC.setInputs [] soac
+
+
+
+--   Futhark.Screma  e _ s  ->
+--     namesToList $ freeIn $ Futhark.Screma e [] s
+--   Futhark.Hist    e _ histops lam ->
+--     namesToList $ freeIn $ Futhark.Hist e [] histops lam
+--   Futhark.Scatter e _ lam other       ->
+--     namesToList $ freeIn $ Futhark.Scatter e [] lam other
+--   Futhark.Stream  a1 _ a3 a4 lam     ->
+--     namesToList $ freeIn $ Futhark.Stream a1 [] a3 a4 lam
+-- -- infusableInputsFromExp op@(BasicOp x) = namesToList $ freeIn op
+-- -- infusableInputsFromExp op@If {} = namesToList $ freeIn op
+-- -- infusableInputsFromExp op@DoLoop {} = namesToList $ freeIn op
+-- infusableInputsFromExp op = namesToList $ freeIn op
 
 aliasInputs :: Stm SOACS -> [VName]
 aliasInputs op = case op of
@@ -504,13 +509,15 @@ aliasInputs op = case op of
 --- Inspecting Stms ---
 
 getStmCons :: EdgeGenerator
-getStmCons n =
-  case nodeStmData n of
-    Just sdata ->
-      let s = oldStm sdata in
-      let names =  namesToList . consumedInStm . Alias.analyseStm mempty $ s in
-      zip names (map Cons names)
-    Nothing -> []
+getStmCons (SoacNode sdata soac) = SOAC.consumedInOp (Op soac)
+
+
+  -- case nodeStmData n of
+  --   Just sdata ->
+  --     let s = oldStm sdata in
+  --     let names =  namesToList . consumedInStm . Alias.analyseStm mempty $ s in
+  --     zip names (map Cons names)
+  --   Nothing -> []
 
 getStmRes :: EdgeGenerator
 getStmRes (RNode name) = [(name, Res name)]
