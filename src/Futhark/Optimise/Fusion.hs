@@ -13,6 +13,7 @@ import Futhark.Construct
 import Futhark.IR.Prop.Aliases
 import Futhark.IR.SOACS hiding (SOAC (..))
 import qualified Futhark.IR.SOACS as Futhark
+import Futhark.Analysis.HORep.SOAC 
 import Futhark.Pass
 import Futhark.Transform.Substitute
 import Futhark.Util (splitAt3)
@@ -171,7 +172,12 @@ vFusionFeasability g n1 n2 =
 
 -- todo: add length check
 hFusionFeasability :: DepGraph -> Node -> Node -> FusionEnvM Bool
+--hFusionFeasability g a b = pure $ nullTransforms (fromMaybe $ nodeToTransforms g a) && nullTransforms (lFromNode g b) && unreachableEitherDir g a b
+--  | nullTransforms ArrayTransforms 
 hFusionFeasability = unreachableEitherDir
+
+  
+ 
 
 tryFuseNodeInGraph :: DepNode -> DepGraphAug
 tryFuseNodeInGraph node_to_fuse g =
@@ -191,11 +197,11 @@ tryFuseNodesInGraph node_1 node_2 g
       b <- vFusionFeasability g node_1 node_2
       if b then
         case fuseContexts infusable_nodes (context g node_1) (context g node_2) of
-          Just newcxt@(inputs, _, SNode stm _, outputs) ->
+          Just newcxt@(inputs, _, SNode stm _ _, outputs) ->
             if null fused then contractEdge node_2 newcxt g
             else do
               new_stm <- makeCopies stm
-              contractEdge node_2 (inputs, node_1, SNode new_stm mempty, outputs) g
+              contractEdge node_2 (inputs, node_1, SNode new_stm mempty mempty, outputs) g
           Just _ -> error "fuseContexts did not return an SNode"
           Nothing -> pure g
       else pure g
@@ -214,10 +220,10 @@ makeCopies s@(Let _ _ (Op (Futhark.Screma _ _  (ScremaForm _ _ lam)))) =
 makeCopies stm = pure stm
 
 makeCopiesInStm :: [VName] -> Stm SOACS -> FusionEnvM (Stm SOACS)
-makeCopiesInStm toCopy (Let sz os (Op st@(Screma szi is (Futhark.ScremaForm scan red lam)))) =
+makeCopiesInStm toCopy (Let sz os (Op st@(Futhark.Screma szi is (Futhark.ScremaForm scan red lam)))) =
   do
     newLam <- makeCopiesInLambda toCopy lam
-    pure $ Let sz os (Op (Screma szi is (Futhark.ScremaForm scan red newLam)))
+    pure $ Let sz os (Op (Futhark.Screma szi is (Futhark.ScremaForm scan red newLam)))
 makeCopiesInStm _ s = pure s
 
 makeCopiesInLambda :: [VName] -> Lambda SOACS -> FusionEnvM (Lambda SOACS)
@@ -252,100 +258,182 @@ tryFuseNodesInGraph2 node_1 node_2 g
 
 fuseContexts2 :: DepContext -> DepContext -> Maybe DepContext
 -- fuse the nodes / contexts
-fuseContexts2 c1@(_, _, SNode s1 _, _)
-              c2@(_, _, SNode s2 _, _)
+fuseContexts2 c1@(_, _, SNode s1 _ _, _)
+              c2@(_, _, SNode s2 _ _, _)
             = case hFuseStms s1 s2 of
-              Just s3 -> Just (mergedContext (SNode s3 mempty) c1 c2)
+              Just s3 -> Just (mergedContext (SNode s3 mempty mempty) c1 c2)
               Nothing -> Nothing
 fuseContexts2 _ _ = Nothing
 
 fuseContexts :: [VName] -> DepContext -> DepContext -> Maybe DepContext
 -- fuse the nodes / contexts
 fuseContexts infusable
-            c1@(_, _, SNode s1 _, _)
-            c2@(_, _, SNode s2 _, _)
-            = case fuseStms infusable s1 s2 of
-              Just s3 -> Just (mergedContext (SNode s3 mempty) c1 c2)
-              Nothing -> Nothing
-fuseContexts _ _ _ = Nothing
-
-fuseStms :: [VName] ->  Stm SOACS -> Stm SOACS -> Maybe (Stm SOACS)
-fuseStms infusible s1 s2 =
-  case (s1, s2) of
-    (Let pats1 aux1 (Op (Futhark.Screma  s_exp1 i1  (ScremaForm scans_1 red_1 lam_1))),
-     Let pats2 aux2 (Op (Futhark.Screma  s_exp2 i2  (ScremaForm scans_2 red_2 lam_2))))
-     | s_exp1 == s_exp2
-     ->
-          Just $ Let (basicPat ids)  (aux1 <> aux2) (Op (Futhark.Screma s_exp2 fused_inputs
-            (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam)))
-      where
-        (o1, o2) = mapT (patNames . stmPat) (s1, s2)
-        (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
-        (lam_1_output, lam_2_output) = mapT (namesFromRes . resFromLambda) (lam_1, lam_2)
-
-        fused_inputs = fuseInputs2 o1 i1 i2
-        lparams = changeAll (i1 ++ i2)
-          (lambdaParams lam_1 ++ lambdaParams lam_2)
-          fused_inputs
-
-        (scan_in_size_1, scan_in_size_2) = mapT scanInput (scans_1, scans_2)
-        (red_in_size_1, red_in_size_2) = mapT redInput (red_1, red_2)
-
-        (scan_inputs_1, red_inputs_1, lambda_outputs_1) = splitAt3 scan_in_size_1 red_in_size_1 lam_1_output
-        (scan_inputs_2, red_inputs_2, lambda_outputs_2) = splitAt3 scan_in_size_2 red_in_size_2 lam_2_output
-
-        fused_lambda_outputs = concat [
-          scan_inputs_1 ++ scan_inputs_2,
-          red_inputs_1 ++ red_inputs_2,
-          lambda_outputs_1 ++  lambda_outputs_2]
-
-        (types, body_res) = unzip $ changeAll (lam_1_output ++ lam_2_output) (
-          zip (lambdaReturnType lam_1) (resFromLambda lam_1) ++
-          zip (lambdaReturnType lam_2) (resFromLambda lam_2)) fused_lambda_outputs
-
-        (scan_outputs_1, red_outputs_1, lambda_used_outputs_1) = splitAt3 (Futhark.scanResults scans_1) (Futhark.redResults red_1) o1
-        (scan_outputs_2, red_outputs_2, lambda_used_outputs_2) = splitAt3 (Futhark.scanResults scans_2) (Futhark.redResults red_2) o2
-
-        fused_outputs = concat [
-          scan_outputs_1,        scan_outputs_2,
-          red_outputs_1,         red_outputs_2,
-          lambda_used_outputs_1, lambda_used_outputs_2]
+            c1@(_, _, n1, _)
+            c2@(_, _, n2, _)
+            = case fuseStms infusable n1 n2 of
+              Just n3@SNode{} -> Just (mergedContext n3 c1 c2)
+              _ -> Nothing
+--fuseContexts _ _ _ = Nothing
 
 
-        ids = changeAll (o1 ++ o2) (patIdents pats1 ++ patIdents pats2) fused_outputs
+-- TEMPORARY: cleanup asap
+fuseScremaStms :: Stm SOACS -> Stm SOACS -> Maybe (Stm SOACS) 
+fuseScremaStms
+  s1@(Let pats1 aux1 (Op (Futhark.Screma  s_exp1 i1  (ScremaForm scans_1 red_1 lam_1))))
+  s2@(Let pats2 aux2 (Op (Futhark.Screma  s_exp2 i2  (ScremaForm scans_2 red_2 lam_2)))) 
+    | s_exp1 == s_exp2 =
+      Just $ Let (basicPat ids)  (aux1 <> aux2) (Op (Futhark.Screma s_exp2 fused_inputs
+                (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam)))
+    where
+      (o1, o2) = mapT (patNames . stmPat) (s1, s2)
+      (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
+      (lam_1_output, lam_2_output) = mapT (namesFromRes . resFromLambda) (lam_1, lam_2)
 
-        fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
+      fused_inputs = fuseInputs2 o1 i1 i2
+      lparams = changeAll (i1 ++ i2)
+        (lambdaParams lam_1 ++ lambdaParams lam_2)
+        fused_inputs
 
-        map1 = makeMap (lam_1_inputs ++ lam_2_inputs) (i1 ++ i2)
-        map2 = makeMap o1 lam_1_output
-        map4 = makeMap fused_inputs fused_inputs_inner
-        map3 = fuseMaps map1 (M.union map2 map4)
+      (scan_in_size_1, scan_in_size_2) = mapT scanInput (scans_1, scans_2)
+      (red_in_size_1, red_in_size_2) = mapT redInput (red_1, red_2)
 
-        lam' = fuseLambda lam_1 lam_2
-        lam = substituteNames map3 $ lam' {
-          lambdaParams = lparams,
-          lambdaReturnType = types,
-          lambdaBody = (lambdaBody lam') {bodyResult = body_res}
-          }
-    -- vertical map-scatter fusion
-    ( Let _ aux1 (Op (Futhark.Screma  s_exp1 i1 (ScremaForm [] [] lam_1))),
-      Let pats2 aux2 (Op (Futhark.Scatter s_exp2 i2 lam_2 other)))
-      | L.null infusible -- only if map outputs are used exclusivly by the scatter
-      && s_exp1 == s_exp2
-      -> Just $ Let pats2  (aux1 <> aux2) (Op (Futhark.Scatter s_exp2 fused_inputs lam other))
+      (scan_inputs_1, red_inputs_1, lambda_outputs_1) = splitAt3 scan_in_size_1 red_in_size_1 lam_1_output
+      (scan_inputs_2, red_inputs_2, lambda_outputs_2) = splitAt3 scan_in_size_2 red_in_size_2 lam_2_output
+
+      fused_lambda_outputs = concat [
+        scan_inputs_1 ++ scan_inputs_2,
+        red_inputs_1 ++ red_inputs_2,
+        lambda_outputs_1 ++  lambda_outputs_2]
+
+      (types, body_res) = unzip $ changeAll (lam_1_output ++ lam_2_output) (
+        zip (lambdaReturnType lam_1) (resFromLambda lam_1) ++
+        zip (lambdaReturnType lam_2) (resFromLambda lam_2)) fused_lambda_outputs
+
+      (scan_outputs_1, red_outputs_1, lambda_used_outputs_1) = splitAt3 (Futhark.scanResults scans_1) (Futhark.redResults red_1) o1
+      (scan_outputs_2, red_outputs_2, lambda_used_outputs_2) = splitAt3 (Futhark.scanResults scans_2) (Futhark.redResults red_2) o2
+
+      fused_outputs = concat [
+        scan_outputs_1,        scan_outputs_2,
+        red_outputs_1,         red_outputs_2,
+        lambda_used_outputs_1, lambda_used_outputs_2]
+
+
+      ids = changeAll (o1 ++ o2) (patIdents pats1 ++ patIdents pats2) fused_outputs
+
+      fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
+
+      map1 = makeMap (lam_1_inputs ++ lam_2_inputs) (i1 ++ i2)
+      map2 = makeMap o1 lam_1_output
+      map4 = makeMap fused_inputs fused_inputs_inner
+      map3 = fuseMaps map1 (M.union map2 map4)
+
+      lam' = fuseLambda lam_1 lam_2
+      lam = substituteNames map3 $ lam' {
+        lambdaParams = lparams,
+        lambdaReturnType = types,
+        lambdaBody = (lambdaBody lam') {bodyResult = body_res}
+        }
+fuseScremaStms _ _ = Nothing
+
+
+fuseStms :: [VName] -> NodeT -> NodeT -> Maybe NodeT
+fuseStms infusible (SNode s1 itr1 otr1) (SNode s2 itr2 otr2)
+  | nullTransforms otr1 && nullInputTransforms itr2 =
+    case (s1,s2) of
+      (Let pats1 aux1 (Op (Futhark.Screma  s_exp1 i1  (ScremaForm scans_1 red_1 lam_1))),
+       Let pats2 aux2 (Op (Futhark.Screma  s_exp2 i2  (ScremaForm scans_2 red_2 lam_2))))
+        | s_exp1 == s_exp2
+          ->
+            Just $ SNode (Let (basicPat ids)  (aux1 <> aux2) (Op (Futhark.Screma s_exp2 fused_inputs
+              (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam)))) itr1 otr2
         where
-        (o1, o2) = mapT (patNames . stmPat) (s1, s2)
-        (lam, fused_inputs) = vFuseLambdas lam_1 i1 o1 lam_2 i2 o2
-    -- vertical map-histogram fusion
-    ( Let _ aux1 (Op (Futhark.Screma s_exp1 i1 (ScremaForm [] [] lam_1))),
-      Let pats2 aux2 (Op (Futhark.Hist   s_exp2 i2 other lam_2)))
-      | L.null infusible -- only if map outputs are used exclusivly by the hist
-      && s_exp1 == s_exp2
-        -> Just $ Let pats2 (aux1 <> aux2) (Op (Futhark.Hist s_exp2 fused_inputs other lam))
+          (o1, o2) = mapT (patNames . stmPat) (s1, s2)
+          (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
+          (lam_1_output, lam_2_output) = mapT (namesFromRes . resFromLambda) (lam_1, lam_2)
+
+          fused_inputs = fuseInputs2 o1 i1 i2
+          lparams = changeAll (i1 ++ i2)
+            (lambdaParams lam_1 ++ lambdaParams lam_2)
+            fused_inputs
+
+          (scan_in_size_1, scan_in_size_2) = mapT scanInput (scans_1, scans_2)
+          (red_in_size_1, red_in_size_2) = mapT redInput (red_1, red_2)
+
+          (scan_inputs_1, red_inputs_1, lambda_outputs_1) = splitAt3 scan_in_size_1 red_in_size_1 lam_1_output
+          (scan_inputs_2, red_inputs_2, lambda_outputs_2) = splitAt3 scan_in_size_2 red_in_size_2 lam_2_output
+
+          fused_lambda_outputs = concat [
+            scan_inputs_1 ++ scan_inputs_2,
+            red_inputs_1 ++ red_inputs_2,
+            lambda_outputs_1 ++  lambda_outputs_2]
+
+          (types, body_res) = unzip $ changeAll (lam_1_output ++ lam_2_output) (
+            zip (lambdaReturnType lam_1) (resFromLambda lam_1) ++
+            zip (lambdaReturnType lam_2) (resFromLambda lam_2)) fused_lambda_outputs
+
+          (scan_outputs_1, red_outputs_1, lambda_used_outputs_1) = splitAt3 (Futhark.scanResults scans_1) (Futhark.redResults red_1) o1
+          (scan_outputs_2, red_outputs_2, lambda_used_outputs_2) = splitAt3 (Futhark.scanResults scans_2) (Futhark.redResults red_2) o2
+
+          fused_outputs = concat [
+            scan_outputs_1,        scan_outputs_2,
+            red_outputs_1,         red_outputs_2,
+            lambda_used_outputs_1, lambda_used_outputs_2]
+
+
+          ids = changeAll (o1 ++ o2) (patIdents pats1 ++ patIdents pats2) fused_outputs
+
+          fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
+
+          map1 = makeMap (lam_1_inputs ++ lam_2_inputs) (i1 ++ i2)
+          map2 = makeMap o1 lam_1_output
+          map4 = makeMap fused_inputs fused_inputs_inner
+          map3 = fuseMaps map1 (M.union map2 map4)
+
+          lam' = fuseLambda lam_1 lam_2
+          lam = substituteNames map3 $ lam' {
+            lambdaParams = lparams,
+            lambdaReturnType = types,
+            lambdaBody = (lambdaBody lam') {bodyResult = body_res}
+            }
+      -- vertical map-scatter fusion
+      ( Let _ aux1 (Op (Futhark.Screma  s_exp1 i1 (ScremaForm [] [] lam_1))),
+        Let pats2 aux2 (Op (Futhark.Scatter s_exp2 i2 lam_2 other)))
+        | L.null infusible -- only if map outputs are used exclusivly by the scatter
+        && s_exp1 == s_exp2
+        -> Just $ SNode (Let pats2  (aux1 <> aux2) (Op (Futhark.Scatter s_exp2 fused_inputs lam other))) itr1 otr2
           where
-            (o1, o2) = mapT (patNames . stmPat) (s1, s2)
-            (lam, fused_inputs) = vFuseLambdas lam_1 i1 o1 lam_2 i2 o2
-    _ -> Nothing
+          (o1, o2) = mapT (patNames . stmPat) (s1, s2)
+          (lam, fused_inputs) = vFuseLambdas lam_1 i1 o1 lam_2 i2 o2
+      -- vertical map-histogram fusion
+      ( Let _ aux1 (Op (Futhark.Screma s_exp1 i1 (ScremaForm [] [] lam_1))),
+        Let pats2 aux2 (Op (Futhark.Hist   s_exp2 i2 other lam_2)))
+        | L.null infusible -- only if map outputs are used exclusivly by the hist
+        && s_exp1 == s_exp2
+          -> Just $ SNode (Let pats2 (aux1 <> aux2) (Op (Futhark.Hist s_exp2 fused_inputs other lam))) itr1 otr2
+            where
+              (o1, o2) = mapT (patNames . stmPat) (s1, s2)
+              (lam, fused_inputs) = vFuseLambdas lam_1 i1 o1 lam_2 i2 o2
+      _ -> Nothing
+  | otherwise =
+    case (s1, s2) of
+      -- vertical map-map fusion across transformations ( s2 deps on s1 )
+      ( Let pats1 aux1 (Op (Futhark.Screma _exp1 i1 (ScremaForm [] [] lam_1))),
+        Let pats2 aux2 (Op (Futhark.Screma exp2  i2 (ScremaForm [] [] lam_2)))) 
+        -> 
+          if nullInputTransforms new_itr2 then
+            Just $ SNode (Let pats2 (aux1 <> aux2) 
+            (Op (Futhark.Screma exp2 fused_inputs (ScremaForm [] [] new_lam) ))) 
+            itr1 otr2
+          else Nothing
+        where
+          (o1, o2) = mapT (patNames . stmPat) (s1, s2)
+          (new_lam, fused_inputs) = vFuseLambdas lam_1 i1 o1 lam_2 i2 o2
+
+          new_itr2 = map (\i -> Input (otr1 <> inputTransforms i) (inputArray i) (inputType i)) itr2
+          
+
+      _ -> Nothing
+fuseStms _ _ _ = Nothing
 
 -- should handle all fusions of lambda at some ponit - now its only perfect fusion
 vFuseLambdas :: Lambda SOACS -> [VName] -> [VName] ->
@@ -390,7 +478,7 @@ resFromLambda =  bodyResult . lambdaBody
 hFuseStms :: Stm SOACS -> Stm SOACS -> Maybe (Stm SOACS)
 hFuseStms s1 s2 = case (s1, s2) of
   (Let pats1 _ (Op Futhark.Screma {}),
-   Let _     _ (Op Futhark.Screma {})) -> fuseStms (patNames pats1) s1 s2
+   Let _     _ (Op Futhark.Screma {})) -> fuseScremaStms s1 s2
   (Let pats1 aux1 (Op (Futhark.Scatter s_exp1 i1 lam_1 outputs1)),
    Let pats2 aux2 (Op (Futhark.Scatter s_exp2 i2 lam_2 outputs2)))
    | s_exp1 == s_exp2 ->
@@ -463,8 +551,8 @@ vNameFromAdj :: Node -> (EdgeT, Node) -> [VName]
 vNameFromAdj n1 (edge, n2) = depsFromEdge (n2,n1, edge)
 
 removeUnusedOutputsFromContext :: DepContext  -> FusionEnvM DepContext
-removeUnusedOutputsFromContext (incoming, n1, SNode s outputTs, outgoing) =
-  pure (incoming, n1, SNode new_stm outputTs, outgoing)
+removeUnusedOutputsFromContext (incoming, n1, SNode s inputTs _, outgoing) =
+  pure (incoming, n1, SNode new_stm inputTs mempty, outgoing)
   where
     new_stm = removeOutputsExcept (concatMap (vNameFromAdj n1) incoming) s
 removeUnusedOutputsFromContext c = pure c
@@ -510,22 +598,22 @@ runInnerFusion = mapAcross runInnerFusionOnContext
 
 runInnerFusionOnContext :: DepContext -> FusionEnvM DepContext
 runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
-  SNode (Let pats aux (If size_exp b1 b2 branchType )) _ ->
+  SNode (Let pats aux (If size_exp b1 b2 branchType )) _ _ ->
     do
       b1_new <- doFusionInner b1 []
       b2_new <- doFusionInner b2 []
-      return (incomming, node, SNode (Let pats aux (If size_exp b1_new b2_new branchType)) mempty, outgoing)
-  SNode (Let pats aux (DoLoop params form body)) _ ->
+      return (incomming, node, SNode (Let pats aux (If size_exp b1_new b2_new branchType)) mempty mempty, outgoing)
+  SNode (Let pats aux (DoLoop params form body)) _ _ ->
     do
       oldScope <- gets scope
       modify (\s -> s {scope = M.union (scopeOfFParams (map fst params)) oldScope})
       b_new <- doFusionInner body (map (paramName . fst) params)
-      return (incomming, node, SNode (Let pats aux (DoLoop params form b_new)) mempty, outgoing)
-  SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] lambda)))) _ ->
+      return (incomming, node, SNode (Let pats aux (DoLoop params form b_new)) mempty mempty, outgoing)
+  SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] lambda)))) _ _ ->
     do
       newbody <- doFusionInner (lambdaBody lambda) []
       let newLam = lambda {lambdaBody = newbody}
-      let nodeNew = SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] newLam)))) mempty
+      let nodeNew = SNode (Let pats aux (Op (Futhark.Screma is sz (ScremaForm [] [] newLam)))) mempty mempty
       pure (incomming, node, nodeNew, outgoing)
   _ -> return c
   where
@@ -551,7 +639,7 @@ makeCopiesOfConsAliased :: DepGraphAug
 makeCopiesOfConsAliased = mapAcross copyAlised
   where
     copyAlised :: DepContext -> FusionEnvM DepContext
-    copyAlised c@(incoming, node, SNode s _, outgoing) = do
+    copyAlised c@(incoming, node, SNode s _ _, outgoing) = do
       let incoming' = concatMap depsFromEdgeT $ filter isFake (map fst incoming)
       let outgoing' = concatMap depsFromEdgeT $ filter isAlias (map fst outgoing)
       let toMakeCopies =  incoming' `L.intersect` outgoing'
