@@ -2,6 +2,7 @@
 -- /A T2 Graph-Reduction Approach To Fusion/ for the basic idea (some
 -- extensions discussed in /Design and GPGPU Performance of Futhark’s
 -- Redomap Construct/).
+{-# LANGUAGE LambdaCase #-}
 module Futhark.Optimise.Fusion (fuseSOACs) where
 
 import qualified Data.List as L
@@ -94,11 +95,30 @@ fuseGraph stms results inputs = do
     modify (\s -> s {scope = M.union (scopeOf stms) oldScope})
 
     let graph_not_fused' = trace (pprg graph_not_fused) graph_not_fused
-    graph_fused <-  doAllFusion graph_not_fused'
-    let graph_fused' = trace (pprg graph_fused) graph_fused
-    let stms_new = linearizeGraph graph_fused'
+    --graph_fused <-  doAllFusion graph_not_fused'
+    --let graph_fused' = trace (pprg graph_fused) graph_fused
+
+    --move output transforms to inputs of next
+    final_g <- otrtoitr graph_not_fused'
+
+    stms_new <- linearizeGraph graph_not_fused'
     modify (\s -> s{producerMapping=old_mappings} )
     pure $ trace (unlines (map ppr stms_new)) stms_new
+    
+otrtoitr :: DepGraphAug
+otrtoitr g = applyAugs (map aug (nodes g)) g
+
+aug :: Node -> DepGraphAug
+aug n g = 
+  case context g n of
+    (ins, _, lab, outs) -> 
+      applyAugs (map (\(_,x) -> aug2 (otrFromNode g x) x)  (filter (isTrDep . fst) ins)) g
+
+aug2 :: ArrayTransforms -> Node -> DepGraphAug
+aug2 tr n =
+  applyAugs [updateNode n (\case
+    SNode stm iTr oTr -> Just $ SNode stm (map (addInitialTransforms tr) iTr) oTr
+    _ -> Nothing) ] 
 
 
 unreachableEitherDir :: DepGraph -> Node -> Node -> FusionEnvM Bool
@@ -111,8 +131,18 @@ reachable :: DepGraph -> Node -> Node -> FusionEnvM Bool
 reachable g source target = pure $ target `elem` Q.reachable source g
 
 
-linearizeGraph :: DepGraph -> [Stm SOACS]
-linearizeGraph g = concatMap stmFromNode $ reverse $ Q.topsort' g
+linearizeGraph :: DepGraph -> FusionEnvM [Stm SOACS]
+linearizeGraph g = do
+  g' <- mapAcross nmf g
+  let reverse_topological = reverse $ Q.topsort' g'
+  l <- mapM (stmFromNode' g') reverse_topological
+  pure $ concat l
+  where
+    nmf cxt = case cxt of 
+      (ins, n, SNode s i otrs, outs) -> do
+        intrstms <- stmFromInputs i
+        pure (ins, n, FinalNode (stmsToList intrstms ++ [s]), outs)
+      other -> pure other
 
 doAllFusion :: DepGraphAug
 doAllFusion = applyAugs [keepTrying doMapFusion, doHorizontalFusion, removeUnusedOutputs, makeCopiesOfConsAliased, runInnerFusion]
@@ -148,9 +178,14 @@ tryFuseAll nodes_list = applyAugs (map (uncurry tryFuseNodesInGraph2) pairs)
 
 isDep :: EdgeT -> Bool
 isDep (Dep _) = True
+isDep (TrDep _) = True
 isDep (InfDep _) = True
 isDep (Res _) = True -- unintuitive, but i think it works
 isDep _ = False
+
+isTrDep :: EdgeT -> Bool
+isTrDep (TrDep _) = True
+isTrDep _ = False
 
 isInf :: (Node, Node, EdgeT) -> Bool
 isInf (_,_,e) = case e of

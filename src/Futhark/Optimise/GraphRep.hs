@@ -22,9 +22,10 @@ import Data.Graph.Inductive.Graph
 import Data.Graph.Inductive.Dot
 import qualified Futhark.Util.Pretty as PP
 
-import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSource, modifyNameSource, blankNameSource)
+import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSource, modifyNameSource, blankNameSource, MonadBuilder, runBuilderT'_)
 import Data.Foldable (foldlM)
 import Control.Monad.State
+import Futhark.Transform.Substitute (Substitute(substituteNames))
 
 data EdgeT = Alias VName | InfDep VName | Dep VName | TrDep VName | Cons VName | Fake VName | Res VName deriving (Eq, Ord)
 data NodeT = SNode (Stm SOACS) [Input] ArrayTransforms | RNode VName | InNode VName | FinalNode [Stm SOACS]
@@ -110,6 +111,32 @@ runFusionEnvM (FusionEnvM a) env =
 type DepGraphAug = DepGraph -> FusionEnvM DepGraph
 
 
+otrFromNode :: DepGraph -> Node -> ArrayTransforms
+otrFromNode g n = 
+  case lFromNode g n of
+    SNode _ _ otr -> otr
+    _ -> noTransforms 
+
+updateNode :: Node -> (NodeT -> Maybe NodeT) -> DepGraphAug
+updateNode n f g =
+  case context g n of
+    (ins, _, lab, outs) ->
+      case f lab of
+        Just newLab -> -- do  -- if Maybe (FusionEnvM NodeT)
+          --newLab' <- newLab
+          pure $ (&) (ins, n, newLab, outs) (delNode n g)
+        Nothing -> pure g
+
+substituteNamesInNodes :: M.Map VName VName -> [Node] -> DepGraphAug
+substituteNamesInNodes submap ns = 
+  applyAugs (map (substituteNameInNode submap) ns)
+  where
+    substituteNameInNode :: M.Map VName VName -> Node -> DepGraphAug
+    substituteNameInNode m n = 
+      updateNode n (\case
+          SNode stm iTr oTr -> Just $ SNode (substituteNames m stm) iTr oTr
+          _ -> Nothing)
+
 addTransforms :: DepGraphAug
 addTransforms g = foldlM (flip helper) g (nodes g)
   where
@@ -117,21 +144,26 @@ addTransforms g = foldlM (flip helper) g (nodes g)
     helper n g
       | gelem n g = 
         case lFromNode g n of
-          SNode (Let _ aux_1 exp_1) _ _ -> 
-            case (transformFromExp (stmAuxCerts aux_1) exp_1, context g n) of
-              (Just (vn, transform), (ins, _, lab, [o])) -> do
-                let g' = insEdges (map (\i -> (snd i, snd o, TrDep vn)) ins) g -- todo: what about other than dep edges?
-                pure (appendTransformToNode (delNode n g') (snd o) transform)
+          SNode (Let pat aux expr) _ _ -> 
+            case (transformFromExp (stmAuxCerts aux) expr, context g n, patNames pat) of
+              (Just (vn, transform), (ins, _, lab, [o]), [trName]) -> do
+                g' <- substituteNamesInNodes (M.singleton trName vn) (map snd ins) g
+                let g'' = insEdges (map (\i -> (snd i, snd o, TrDep vn)) ins) g' -- todo: what about other than dep edges?
+                appendTransformToNode (snd o) transform (delNode n g'')
               _ -> pure g
           _ -> pure g
       | otherwise = pure g
 
-appendTransformToNode :: DepGraph -> Node -> ArrayTransform -> DepGraph
-appendTransformToNode g n tr =
-  case context g n of
-    (ins, n', SNode stm itrs otrs, outs) -> 
-      (&) (ins, n', SNode stm itrs (otrs |> tr), outs) (delNode n g)
-    _ -> g
+-- Create a new node with an output transform and swap out the existing one
+appendTransformToNode :: Node -> ArrayTransform -> DepGraphAug
+appendTransformToNode n tr = 
+  updateNode n (\case
+      SNode stm itrs otrs -> Just $ SNode stm itrs (otrs |> tr)
+      _ -> Nothing ) 
+  -- case context g n of
+  --   (ins, _, SNode stm itrs otrs, outs) -> 
+  --     (&) (ins, n, SNode stm itrs (otrs |> tr), outs) (delNode n g)
+  --   _ -> g
 
 inputTransforms :: Input -> ArrayTransforms
 inputTransforms (Input trs _ _) = trs
@@ -139,51 +171,18 @@ inputTransforms (Input trs _ _) = trs
 nullInputTransforms :: [Input] -> Bool
 nullInputTransforms = all (nullTransforms . inputTransforms)
 
--- appendTransform :: DepNode -> DepGraphAug
--- appendTransform node_to_fuse g =
---   if gelem (nodeFromLNode node_to_fuse) g
---   then applyAugs (map (appendT node_to_fuse_id) fuses_to) g
---   else pure g
---   where
---     fuses_to = map nodeFromLNode $ input g node_to_fuse
---     node_to_fuse_id = nodeFromLNode node_to_fuse
-
--- -- Given two nodes, if the nodes are (MapNest depends on ArrayTransform)
--- -- add the ArrayTransform to the input transforms of MapNest
--- -- Delete the transformNode, keep the mapNode
--- appendT :: Node -> Node -> DepGraphAug
--- appendT merge_into input_transform g
---   | not (gelem input_transform g && gelem merge_into g) = pure g
---   -- outdeg g merge_into == 1 =
---   | otherwise = 
---     case mapT (lFromNode g) (input_transform, merge_into) of
---       (SNode (Let _ aux_1 exp_1) _ _, -- ArrayTransform
---         SNode s@(Let _ aux_2 (Op (Futhark.Screma _ _ scremaform))) transforms ots) ->
---         case (transformFromExp (stmAuxCerts aux_1) exp_1, isMapSOAC scremaform) of
---           (Just (vn,transform), Just _) -> do
---             let newNodeL = SNode s (addTransform transforms vn transform) ots
---             let newContext = mergedContext newNodeL (context g merge_into) (context g input_transform)
---             contractEdge input_transform newContext g
---           _ -> pure g
---       _ -> pure g
---   where
---     addTransform :: InputTransforms -> VName -> ArrayTransform -> InputTransforms
---     addTransform trs vn tr = 
---       case M.lookup vn trs of
---         Nothing  -> M.insert vn (tr <| noTransforms) trs
---         Just seq -> M.insert vn (tr <| seq) trs
-
-
 
 --- Graph Construction ---
 
-emptyG2 :: [Stm SOACS] -> [VName] -> [VName] -> DepGraph
-emptyG2 stms res inputs = mkGraph (label_nodes (snodes ++ rnodes ++ inNodes)) []
-  where
-    label_nodes = zip [0..]
-    snodes = map (\s -> SNode s [] noTransforms) stms
-    rnodes = map RNode res
-    inNodes= map InNode inputs
+emptyG2 :: [Stm SOACS] -> [VName] -> [VName] -> FusionEnvM DepGraph
+emptyG2 stms res inputs = do
+  snodes <- mapM (\s -> do
+    inps <- inputsFromStm s
+    pure $ SNode s inps noTransforms) stms
+  let rnodes  = map RNode res
+  let inNodes = map InNode inputs
+  let label_nodes = zip [0..]
+  pure $ mkGraph (label_nodes (snodes ++ rnodes ++ inNodes)) []
 
 isArray :: FParam SOACS -> Bool
 isArray p = case paramDec p of
@@ -192,13 +191,13 @@ isArray p = case paramDec p of
 
 mkDepGraph :: [Stm SOACS] -> [VName] -> [VName] -> FusionEnvM DepGraph
 mkDepGraph stms res inputs = do
-  let g = emptyG2 stms res inputs
+  g <- emptyG2 stms res inputs
   _ <- makeMapping g
   addDepEdges g
 
 addDepEdges :: DepGraphAug
 addDepEdges = applyAugs
-  [addDeps2, makeScanInfusible, addInfDeps, addCons, addExtraCons, addResEdges, addAliases, addTransforms]
+  [addDeps2, makeScanInfusible, addInfDeps,  addCons, addExtraCons, addResEdges, addTransforms, addAliases]
 
 
 makeMapping :: DepGraphAug
@@ -233,12 +232,28 @@ applyAugs augs g = foldlM (flip ($)) g augs
 label :: DepNode -> NodeT
 label = snd
 
-stmFromNode :: NodeT -> [Stm SOACS]
---stmFromNode (SNode x inputTransforms outputTransforms) = [inputTransforms, x, outputTransforms]
+stmFromInputs :: [Input] -> FusionEnvM (Stms SOACS)
+stmFromInputs inps = 
+  runBuilderT'_ (inputsToSubExps inps)
 
-stmFromNode (SNode x [] _) = [x]
+stmFromNode' :: DepGraph -> NodeT -> FusionEnvM [Stm SOACS]
+stmFromNode' g (SNode x inps outtrs) = do
+  is <- stmFromInputs inps
+  --os <- stmFromInputs []
+  pure (stmsToList is ++ [x])
+stmFromNode' g (FinalNode x) = pure x
+stmFromNode' _ _ = pure []
+
+stmFromNode :: NodeT -> [Stm SOACS]
+stmFromNode (SNode x _ _) = [x]
 stmFromNode (FinalNode x) = x
 stmFromNode _ = []
+
+
+-- stmFromNode :: NodeT -> [Stm SOACS]
+-- stmFromNode (SNode x [] _) = [x]
+-- stmFromNode (FinalNode x) = x
+-- stmFromNode _ = []
 
 nodeFromLNode :: DepNode -> Node
 nodeFromLNode = fst
@@ -371,6 +386,16 @@ makeScanInfusible g = return $ emap change_node_to_idep g
 
 fusableInputs :: Stm SOACS -> [VName]
 fusableInputs (Let _ _ expr) = fusableInputsFromExp expr
+
+-- might need support for non-soacs
+inputsFromStm :: Stm SOACS -> FusionEnvM [Input]
+inputsFromStm (Let _ _ expr@(Op _)) = do
+  fexp <- fromExp expr
+  case fexp of
+    (Right soac) -> pure $ inputs soac
+    _ -> pure []
+inputsFromStm _ = pure []
+
 
 fusableInputsFromExp :: Exp SOACS -> [VName]
 fusableInputsFromExp (Op soac) = case soac of
