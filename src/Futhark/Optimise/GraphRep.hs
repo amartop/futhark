@@ -22,7 +22,7 @@ import Data.Graph.Inductive.Graph
 import Data.Graph.Inductive.Dot
 import qualified Futhark.Util.Pretty as PP
 
-import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSource, modifyNameSource, blankNameSource, MonadBuilder, runBuilderT'_)
+import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSource, modifyNameSource, blankNameSource, MonadBuilder, runBuilderT')
 import Data.Foldable (foldlM)
 import Control.Monad.State
 import Futhark.Transform.Substitute (Substitute(substituteNames))
@@ -147,9 +147,16 @@ addTransforms g = foldlM (flip helper) g (nodes g)
           SNode (Let pat aux expr) _ _ -> 
             case (transformFromExp (stmAuxCerts aux) expr, context g n, patNames pat) of
               (Just (vn, transform), (ins, _, lab, [o]), [trName]) -> do
-                g' <- substituteNamesInNodes (M.singleton trName vn) (map snd ins) g
+                let inodes = map snd ins
+                g' <- substituteNamesInNodes (M.singleton trName vn) inodes g
                 let g'' = insEdges (map (\i -> (snd i, snd o, TrDep vn)) ins) g' -- todo: what about other than dep edges?
-                appendTransformToNode (snd o) transform (delNode n g'')
+                g''' <- 
+                  applyAugs (map (`updateNode` (\case
+                    SNode s trs otrs -> Just $ SNode s (map (\inp -> if inputArray inp /= trName then inp 
+                                  else Input (inputTransforms inp) vn (inputType inp)) trs ) otrs
+                    _ -> Nothing
+                    )) inodes) g''
+                appendTransformToNode (snd o) transform (delNode n g''')
               _ -> pure g
           _ -> pure g
       | otherwise = pure g
@@ -232,15 +239,14 @@ applyAugs augs g = foldlM (flip ($)) g augs
 label :: DepNode -> NodeT
 label = snd
 
-stmFromInputs :: [Input] -> FusionEnvM (Stms SOACS)
-stmFromInputs inps = 
-  runBuilderT'_ (inputsToSubExps inps)
+stmFromInputs :: [Input] -> FusionEnvM ([VName], Stms SOACS)
+stmFromInputs inps = runBuilderT' (inputsToSubExps inps)
 
 stmFromNode' :: DepGraph -> NodeT -> FusionEnvM [Stm SOACS]
 stmFromNode' g (SNode x inps outtrs) = do
-  is <- stmFromInputs inps
+  (vns,is) <- stmFromInputs inps
   --os <- stmFromInputs []
-  pure (stmsToList is ++ [x])
+  pure (stmsToList is ++ (if not null vns then [substituteNames (M.singleton (last output vns)) a x] else [x]))
 stmFromNode' g (FinalNode x) = pure x
 stmFromNode' _ _ = pure []
 

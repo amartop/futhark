@@ -101,7 +101,7 @@ fuseGraph stms results inputs = do
     --move output transforms to inputs of next
     final_g <- otrtoitr graph_not_fused'
 
-    stms_new <- linearizeGraph graph_not_fused'
+    stms_new <- linearizeGraph final_g
     modify (\s -> s{producerMapping=old_mappings} )
     pure $ trace (unlines (map ppr stms_new)) stms_new
     
@@ -112,14 +112,19 @@ aug :: Node -> DepGraphAug
 aug n g = 
   case context g n of
     (ins, _, lab, outs) -> 
-      applyAugs (map (\(_,x) -> aug2 (otrFromNode g x) x)  (filter (isTrDep . fst) ins)) g
+      applyAugs (map (\(x,xn) -> aug2 (otrFromNode g xn) n x)  (filter (isTrDep . fst) ins)) g
 
-aug2 :: ArrayTransforms -> Node -> DepGraphAug
-aug2 tr n =
-  applyAugs [updateNode n (\case
-    SNode stm iTr oTr -> Just $ SNode stm (map (addInitialTransforms tr) iTr) oTr
-    _ -> Nothing) ] 
-
+aug2 :: ArrayTransforms -> Node -> EdgeT -> DepGraphAug
+aug2 tr n (TrDep vn) =
+  applyAugs [updateNode n c] 
+  where
+    f :: Input -> Input
+    f i = if inputArray i == vn then addInitialTransforms tr i else i
+    c x = case x of 
+      SNode stm iTr oTr -> 
+        Just $ SNode stm (map f iTr) oTr
+      _ -> Nothing
+aug2 _ _ _ = pure
 
 unreachableEitherDir :: DepGraph -> Node -> Node -> FusionEnvM Bool
 unreachableEitherDir g a b = do
@@ -140,7 +145,8 @@ linearizeGraph g = do
   where
     nmf cxt = case cxt of 
       (ins, n, SNode s i otrs, outs) -> do
-        intrstms <- stmFromInputs i
+        (vns, intrstms) <- stmFromInputs i
+        
         pure (ins, n, FinalNode (stmsToList intrstms ++ [s]), outs)
       other -> pure other
 
