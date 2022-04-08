@@ -112,11 +112,11 @@ aug :: Node -> DepGraphAug
 aug n g = 
   case context g n of
     (ins, _, lab, outs) -> 
-      applyAugs (map (\(x,xn) -> aug2 (otrFromNode g xn) n x)  (filter (isTrDep . fst) ins)) g
+      applyAugs (map (\(x,xn) -> aug2 (otrFromNode g n) xn x)  (filter (isTrDep . fst) ins)) g
 
 aug2 :: ArrayTransforms -> Node -> EdgeT -> DepGraphAug
 aug2 tr n (TrDep vn) =
-  applyAugs [updateNode n c] 
+  trace ("BACK IN:" ++ show tr) $ applyAugs [updateNode n c] 
   where
     f :: Input -> Input
     f i = if inputArray i == vn then addInitialTransforms tr i else i
@@ -138,9 +138,9 @@ reachable g source target = pure $ target `elem` Q.reachable source g
 
 linearizeGraph :: DepGraph -> FusionEnvM [Stm SOACS]
 linearizeGraph g = do
-  g' <- mapAcross nmf g
-  let reverse_topological = reverse $ Q.topsort' g'
-  l <- mapM (stmFromNode' g') reverse_topological
+  --g' <- mapAcross nmf g
+  let reverse_topological = reverse $ Q.topsort' g
+  l <- mapM (stmFromNode' g) reverse_topological
   pure $ concat l
   where
     nmf cxt = case cxt of 

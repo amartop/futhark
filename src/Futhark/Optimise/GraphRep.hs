@@ -27,6 +27,8 @@ import Data.Foldable (foldlM)
 import Control.Monad.State
 import Futhark.Transform.Substitute (Substitute(substituteNames))
 
+import Debug.Trace
+
 data EdgeT = Alias VName | InfDep VName | Dep VName | TrDep VName | Cons VName | Fake VName | Res VName deriving (Eq, Ord)
 data NodeT = SNode (Stm SOACS) [Input] ArrayTransforms | RNode VName | InNode VName | FinalNode [Stm SOACS]
   deriving (Eq, Ord)
@@ -156,7 +158,8 @@ addTransforms g = foldlM (flip helper) g (nodes g)
                                   else Input (inputTransforms inp) vn (inputType inp)) trs ) otrs
                     _ -> Nothing
                     )) inodes) g''
-                appendTransformToNode (snd o) transform (delNode n g''')
+                let gtrace = trace ("ADDING: " ++ show transform) g'''
+                appendTransformToNode (snd o) transform (delNode n gtrace)
               _ -> pure g
           _ -> pure g
       | otherwise = pure g
@@ -245,8 +248,12 @@ stmFromInputs inps = runBuilderT' (inputsToSubExps inps)
 stmFromNode' :: DepGraph -> NodeT -> FusionEnvM [Stm SOACS]
 stmFromNode' g (SNode x inps outtrs) = do
   (vns,is) <- stmFromInputs inps
+  let trarrnames = map inputArray inps
+  let m = M.fromList $ zip trarrnames vns
+  let m' = trace ("MAP:" ++ show m) m
   --os <- stmFromInputs []
-  pure (stmsToList is ++ (if not null vns then [substituteNames (M.singleton (last output vns)) a x] else [x]))
+  let is' = trace ("TRANSFOMRS: " ++ ppr is) is
+  pure (stmsToList is' ++ [substituteNames m' x])
 stmFromNode' g (FinalNode x) = pure x
 stmFromNode' _ _ = pure []
 

@@ -31,6 +31,7 @@ dist-newstyle
 *.toc
 *.vrb
 *.nav
+*.c
 
 # Ignore core dumps.
 core
@@ -49,3 +50,6 @@ testparser/
 
 # ignore mac garbage
 *.DS_Store
+# ignore testing subfolders
+visgraph/*
+sample_programs/*
