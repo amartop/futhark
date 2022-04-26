@@ -35,13 +35,7 @@ import Data.Graph.Inductive.Dot
 import qualified Futhark.Util.Pretty as PP
 
 --import Debug.Trace
---import Debug.Trace
---import Debug.Trace
---import Debug.Trace
---import Debug.Trace
---import Debug.Trace
---import Debug.Trace
---import Debug.Trace
+
 import Futhark.Builder (MonadFreshNames (putNameSource), VNameSource, getNameSource, modifyNameSource, blankNameSource, runBuilder, auxing, letBind)
 --import Futhark.Pass
 import Data.Foldable (foldlM)
@@ -49,6 +43,9 @@ import Control.Monad.State
 import Futhark.Transform.Substitute (Substitute (substituteNames), Substitutable)
 import Control.Monad.Reader (ReaderT (runReaderT))
 import Foreign (bitReverse32)
+import Futhark.MonadFreshNames (newName)
+import Debug.Trace (trace)
+import Data.Maybe (isJust, isNothing)
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -70,7 +67,7 @@ data EdgeT =
 
 data NodeT =
     StmNode (Stm SOACS)
-  | SoacNode (H.SOAC SOACS) (Pat (LetDec SOACS)) (StmAux (ExpDec SOACS)) H.ArrayTransforms
+  | SoacNode (H.SOAC SOACS) [H.Input] (StmAux (ExpDec SOACS))
   | RNode VName
   | InNode VName
   | FinalNode [Stm SOACS] NodeT
@@ -102,8 +99,11 @@ setName vn edgeT = case edgeT of
   ScanRed _ -> ScanRed vn
   TrDep   _ -> TrDep vn
 
+inputFromPat :: Typed rep => Pat rep -> [H.Input]
+inputFromPat = map H.identInput . patIdents
 
-
+makeMap :: Ord a => [a] -> [b] -> M.Map a b
+makeMap x y = M.fromList $ zip x y
 
 instance Substitute EdgeT where
   substituteNames m edgeT =
@@ -114,8 +114,11 @@ instance Substitute EdgeT where
 instance Substitute NodeT where
   substituteNames m nodeT = case nodeT of
     StmNode stm -> StmNode (f stm)
-    SoacNode so pat sa ts -> let lam = H.lambda so in
-      SoacNode (H.setLambda (f lam) so) (f pat) (f sa) (f ts) -- this may be ridiculously buggy, just a heads-up
+    SoacNode so pat sa ->
+      let lam = f (H.lambda so) in
+      let inps= f (H.inputs so) in
+      let so' = H.setLambda lam $ H.setInputs inps so in
+      SoacNode so' (f pat) (f sa)
     RNode vn -> RNode (f vn)
     InNode vn -> InNode (f vn)
     FinalNode stms nt -> FinalNode (map f stms) (f nt)
@@ -143,7 +146,7 @@ instance Show EdgeT where
 -- nodeT_to_str
 instance Show NodeT where
     show (StmNode (Let pat _ _)) = L.intercalate ", " $ map ppr $ patNames pat
-    show (SoacNode _ pat _ _) = L.intercalate ", " $ map ppr $ patNames pat
+    show (SoacNode _ pat _) = L.intercalate ", " $ map (ppr . H.inputArray) pat
     show (FinalNode stms nt) = show nt
     show (RNode name)  = ppr $ "Res: "   ++ ppr name
     show (InNode name) = ppr $ "Input: " ++ ppr name
@@ -321,7 +324,8 @@ addDepEdges = applyAugs
   addExtraCons,
   addResEdges,
   addAliases,--, appendTransformations
-  convertGraph] -- this one must be done last
+  convertGraph, -- this one must be done last
+  addTransforms]
 
 
 makeMapping :: DepGraphAug
@@ -378,6 +382,10 @@ mapAcrossNodeTs f = mapAcross f'
 -- mapAcrossWithSE f g =
 --   applyAugs (map (f . contextFromNode) (nodes g))
 
+inputTransforms :: H.Input -> H.ArrayTransforms
+inputTransforms (H.Input ts _ _) = ts
+
+
 addTransforms :: DepGraphAug
 addTransforms g =
   applyAugs (map helper ns) g
@@ -385,21 +393,47 @@ addTransforms g =
     ns = nodes g
     helper :: Node -> DepGraphAug
     helper n g = case lab g n of
-      Just (StmNode (Let _ aux exp))
+      Just (StmNode (Let pat aux exp))
         | Just (vn, transform) <- H.transformFromExp (stmAuxCerts aux) exp,
-          [prevNode] <- suc g n,
-          (incomming, n', SoacNode soac pats aux old_ts, outgoing) <- context g prevNode
+          [n'] <- L.nub $ suc g n,
+          Just (SoacNode soac outps aux2) <- lab g n',
+          [trName] <- patNames pat
         -> do
-          let sucNodes = pre g n'
-          g' <- depGraphInsertEdges (map (\nd -> (nd,n', TrDep vn)) sucNodes) g
-          contractEdge n (incomming, n', SoacNode soac pats aux (old_ts H.|> transform), outgoing) g
+          let sucNodes = pre g n
+          let edgs = inn g n
+          g' <- depGraphInsertEdges (map (\nd -> (nd, n', TrDep vn)) sucNodes) g
+          let outps' = map (\inp -> if H.inputArray inp /= vn
+                                    then inp
+                                    else H.addTransform transform inp)  outps
+          g'' <- applyAugs [substituteNamesInNodes (makeMap [trName] [vn]) sucNodes,
+                     substituteNamesInEdges (makeMap [trName] [vn]) edgs
+                     ] g'
+          let ctx = mergedContext (SoacNode soac outps' (aux <> aux2)) (context g'' n') (context g'' n)
+          contractEdge n ctx g''
       _ -> pure g
 -- the context part could be nicer
 
 
+-- addTransformToInputs :: H.Transform -> H.Input
+-- (map (\inp -> if inputArray inp /= trName then inp
+--                                   else addTransform transform inp))
 
--- updateContext :: DepContext -> (NodeT -> NodeT) -> DepContext
--- updateContext (incomming, n, nt, outgoing) f = (incomming, n, f nt, outgoing)
+
+substituteNamesInNodes :: M.Map VName VName -> [Node] -> DepGraphAug
+substituteNamesInNodes submap ns =
+  applyAugs (map (substituteNameInNode submap) ns)
+  where
+    substituteNameInNode :: M.Map VName VName -> Node -> DepGraphAug
+    substituteNameInNode m n =
+      updateNode n (Just . substituteNames m)
+
+mapEdgeT :: (EdgeT -> EdgeT) -> DepEdge -> DepEdge
+mapEdgeT f (n1, n2, e) = (n1, n2, f e)
+
+substituteNamesInEdges :: M.Map VName VName -> [DepEdge] -> DepGraphAug
+substituteNamesInEdges m edgs g =
+  let edgs' = map (mapEdgeT (substituteNames m)) edgs in
+  pure $ insEdges edgs' $ foldl (flip ($)) g (map delLEdge edgs)
 
 
 updateNode :: Node -> (NodeT -> Maybe NodeT) -> DepGraphAug
@@ -418,7 +452,7 @@ nodeToSoacNode n@(StmNode s@(Let pats aux op)) = case op of
   Op {} -> do
     maybeSoac <- H.fromExp op
     case maybeSoac of
-      Right hsoac -> pure $ SoacNode hsoac pats aux H.noTransforms
+      Right hsoac -> pure $ SoacNode hsoac (inputFromPat pats) aux
       Left H.NotSOAC -> pure n
   -- add if, loops, (maybe transformations)
   DoLoop {} -> -- loop-node
@@ -675,7 +709,7 @@ getOutputs node = case node of
   (IfNode stm nodes) -> getStmNames stm
   (DoNode stm nodes) -> getStmNames stm
   (FinalNode stms _) -> error "Final nodes cannot generate edges" -- concatMap getStmNames stms
-  (SoacNode _ pats _ _) -> patNames pats
+  (SoacNode _ outputs _) -> map H.inputArray outputs
 
 --- /Inspecting Stms ---
 
@@ -684,15 +718,32 @@ mapT :: (a -> b) -> (a,a) -> (b,b)
 mapT f (a,b) = (f a, f b)
 
 
+inputSetName ::  VName  -> H.Input -> H.Input
+inputSetName vn (H.Input ts _ tp) = H.Input ts vn tp
+
+genOutTransformStms :: [H.Input] -> FusionEnvM (M.Map VName VName,Stms SOACS)
+genOutTransformStms inps = do
+  let inps' = filter (isNothing . H.isVarInput) inps
+  let names = map H.inputArray inps'
+  newNames <- mapM newName names
+  let newInputs = zipWith inputSetName newNames inps'
+  -- "la mente a volte sbaglia. Il cuore non perdona" xP
+  let weirdScope = scopeOfPat (basicPat (map inputToIdent newInputs))
+  (namesToRep, stms) <- localScope weirdScope  $ runBuilder (H.inputsToSubExps newInputs)
+  pure (makeMap names newNames, substituteNames (makeMap namesToRep names) stms)
+
+inputToIdent :: H.Input -> Ident
+inputToIdent (H.Input _ vn tp) = Ident vn tp
 
 finalizeNode :: NodeT -> FusionEnvM [Stm SOACS]
 finalizeNode nt = case nt of
   StmNode stm -> pure [stm]
-  SoacNode soac pats aux outputTransforms -> do -- TODO handle these
+  SoacNode soac outputs aux -> do -- TODO handle these
+    (mapping, outputTrs) <- genOutTransformStms outputs
     (_, stms) <-  runBuilder $ do
       new_soac <- H.toSOAC soac
-      auxing aux $ letBind pats $ Op new_soac
-    return $ stmsToList stms
+      auxing aux $ letBind (basicPat (map inputToIdent outputs)) $ Op new_soac
+    return $ stmsToList (substituteNames mapping stms <> outputTrs)
   RNode vn  -> pure []
   InNode vn -> pure []
   DoNode stm lst -> do
@@ -704,3 +755,6 @@ finalizeNode nt = case nt of
   FinalNode stms nt' -> do
     stms' <- finalizeNode nt'
     pure $ stms <> stms'
+
+
+-- any (isNothing . isVarInput) outputs

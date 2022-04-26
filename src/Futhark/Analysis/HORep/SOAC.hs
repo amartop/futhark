@@ -53,6 +53,8 @@ module Futhark.Analysis.HORep.SOAC
     transformRows,
     transposeInput,
 
+    inputsToSubExps,
+
     -- ** Input transformations
     ArrayTransforms,
     noTransforms,
