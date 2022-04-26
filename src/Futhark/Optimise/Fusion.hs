@@ -819,11 +819,11 @@ runInnerFusion = mapAcross runInnerFusionOnContext
 runInnerFusionOnContext :: DepContext -> FusionEnvM DepContext
 runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
   DoNode (Let pat aux (DoLoop params form body)) toFuse ->
-    doFuseScans $ localScope (scopeOfFParams (map fst params)) $ do
+    doFuseScans $ localScope (scopeOfFParams (map fst params) <> scopeOf form) $ do
     let extra_is = map (paramName . fst) (filter (isArray . fst) params)
     b <- doFusionWithDelayed body extra_is toFuse
     pure (incomming, node, DoNode (Let pat aux (DoLoop params form b)) [], outgoing)
-  IfNode (Let pat aux (If sz b1 b2 dec)) toFuse -> do
+  IfNode s@(Let pat aux (If sz b1 b2 dec)) toFuse -> do
     b1' <- doFusionWithDelayed b1 [] toFuse
     b2' <- doFusionWithDelayed b2 [] toFuse
     rb2' <- renameBody b2'
