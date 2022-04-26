@@ -598,10 +598,10 @@ fusableInputs (Let _ _ expr) = fusableInputsFromExp expr
 
 fusableInputsFromExp :: Exp SOACS -> [VName]
 fusableInputsFromExp (If _ b1 b2 _) =
-  concatMap fusableInputs (bodyStms b1) <>
-  concatMap fusableInputs (bodyStms b2)
+  concatMap fusableInputs (bodyStms b1) <> namesFromRes (bodyResult b1) <>
+  concatMap fusableInputs (bodyStms b2) <> namesFromRes (bodyResult b2)
 fusableInputsFromExp (DoLoop _ _ b1) =
-  concatMap fusableInputs (bodyStms b1)
+  concatMap fusableInputs (bodyStms b1) <> namesFromRes (bodyResult b1)
 fusableInputsFromExp (Op soac) = case soac of
   Futhark.Screma  _ is _     -> is
   Futhark.Hist    _ is _ _   -> is
