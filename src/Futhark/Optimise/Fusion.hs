@@ -327,12 +327,12 @@ tryFuseNodesInGraph node_1 node_2 g
 -- (tal, x) -> (tal, x)
 
 makeCopies :: NodeT -> FusionEnvM NodeT
-makeCopies (SoacNode soac pats aux) =
+makeCopies (SoacNode soac pats aux trs) =
   do
     let lam = H.lambda soac
     let fused_inner = namesToList $ consumedByLambda $ Alias.analyseLambda mempty lam
     lam' <- makeCopiesInLambda fused_inner lam
-    pure $ SoacNode (H.setLambda lam' soac) pats aux
+    pure $ SoacNode (H.setLambda lam' soac) pats aux trs
 makeCopies nodeT = pure nodeT
 
 makeCopiesInLambda :: [VName] -> Lambda SOACS -> FusionEnvM (Lambda SOACS)
@@ -407,8 +407,8 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
     ( _,
       DoNode stm2 dfused) | isRealNode s1, null infusible
         -> pure $ Just $ DoNode stm2 $ (s1, e1s) : dfused
-    ( SoacNode soac1 pats1 aux1,
-      SoacNode soac2 pats2 aux2) ->
+    ( SoacNode soac1 pats1 aux1 trs1,
+      SoacNode soac2 pats2 aux2 trs2) ->
         let (o1, o2) = mapT patNames (pats1, pats2) in
         let aux = (aux1 <> aux2) in
         case (soac1, soac2) of
@@ -416,7 +416,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
             H.Screma  s_exp2  (ScremaForm scans_2 red_2 lam_2) i2)
             | s_exp1 == s_exp2 && not (any isScanRed edgs) ->
               let soac = H.Screma s_exp2 (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam) fused_inputs
-              in pure $ Just $ SoacNode soac (basicPat ids) (aux1 <> aux2)
+              in pure $ Just $ SoacNode soac (basicPat ids) (aux1 <> aux2) trs1
                 where
             (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
             (lam_1_output, lam_2_output) = mapT (namesFromRes . resFromLambda) (lam_1, lam_2)
@@ -489,7 +489,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
               && s_exp1 == s_exp2
               ->
                 let soac = H.Scatter s_exp2 lam fused_inputs other in
-                pure $ Just $ SoacNode soac pats2  (aux1 <> aux2)
+                pure $ Just $ SoacNode soac pats2  (aux1 <> aux2) trs1
             where
               (lam, fused_inputs) = vFuseLambdas [] lam_1 i1 o1 lam_2 i2 o2
           ( H.Screma s_exp1  (ScremaForm [] [] lam_1) i1,
@@ -498,7 +498,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
             && s_exp1 == s_exp2
              ->
                let soac = H.Hist s_exp2 other lam fused_inputs in
-               pure $ Just $ SoacNode soac pats2 (aux1 <> aux2)
+               pure $ Just $ SoacNode soac pats2 (aux1 <> aux2) trs1
             where
               (lam, fused_inputs) = vFuseLambdas [] lam_1 i1 o1 lam_2 i2 o2
           ( H.Screma s_exp1 sform1 i1,
@@ -510,7 +510,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
                   if stream1 /= soac1 then do
                       is_extra_1' <- mapM (newIdent "unused" . identType) is_extra_1
                       fuseNodeT edgs infusible
-                        (SoacNode stream1 (basicPat is_extra_1' <> pats1) aux1, e1s)
+                        (SoacNode stream1 (basicPat is_extra_1' <> pats1) aux1 trs1, e1s)
                         (s2, e2s)
                   else pure Nothing
           -- ( Futhark.Screma s_exp1 i1 sform1,
@@ -570,7 +570,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
 
               -- let lam_new =  lam
               let soac = H.Stream s_exp1  (mergeForms sform1 sform2)  lam''' (nes1 <> nes2) is_new
-              pure $ Just $ substituteNames mmap $ SoacNode soac (basicPat pats) aux
+              pure $ Just $ substituteNames mmap $ SoacNode soac (basicPat pats) aux trs1
 
           _ -> pure Nothing -- not fusable soac combos
     _ -> pure Nothing -- not op statements
@@ -640,15 +640,15 @@ resFromLambda =  bodyResult . lambdaBody
 
 hFuseNodeT :: NodeT-> NodeT-> FusionEnvM (Maybe NodeT)
 hFuseNodeT s1 s2 = case (s1, s2) of
-  (SoacNode soac1 pats1 aux1,
-   SoacNode soac2 pats2 aux2) -> case (soac1, soac2) of
+  (SoacNode soac1 pats1 aux1 trs1,
+   SoacNode soac2 pats2 aux2 trs2) -> case (soac1, soac2) of
       ( H.Screma {},
         H.Screma {}) -> fuseNodeT [] (patNames pats1) (s1, []) (s2, [])
       ( H.Scatter s_exp1 lam_1 i1 outputs1 ,
         H.Scatter s_exp2 lam_2 i2 outputs2)
         | s_exp1 == s_exp2 ->
           let soac = H.Scatter s_exp2 lam fused_inputs outputs  in
-          pure $ Just $ SoacNode soac pats aux
+          pure $ Just $ SoacNode soac pats aux trs1
             where
               pats = pats1 <> pats2
               aux = aux1 <> aux2
@@ -709,7 +709,7 @@ hFuseNodeT s1 s2 = case (s1, s2) of
                   }
             -- success (outNames ker ++ returned_outvars) $
           let soac = H.Hist s_exp1  (ops_1 <> ops_2) lam' (i1 <> i2)
-          return $ Just $ SoacNode soac (pats1 <> pats2) (aux1 <> aux2)
+          return $ Just $ SoacNode soac (pats1 <> pats2) (aux1 <> aux2) trs1
       _ -> pure Nothing
   _ -> pure Nothing
 
@@ -789,8 +789,8 @@ removeUnusedOutputsFromContext c = pure c
 
 removeOutputsExcept :: [VName] -> NodeT -> NodeT
 removeOutputsExcept toKeep s = case s of
-  SoacNode soac@(H.Screma _ (ScremaForm scans_1 red_1 lam_1) _) pats1 aux1 ->
-      SoacNode (H.setLambda lam_new soac) (basicPat $ pats_unchanged ++ pats_new) aux1
+  SoacNode soac@(H.Screma _ (ScremaForm scans_1 red_1 lam_1) _) pats1 aux1 tr1 ->
+      SoacNode (H.setLambda lam_new soac) (basicPat $ pats_unchanged ++ pats_new) aux1 tr1
         where
           scan_input_size = scanInput scans_1
           red_input_size = redInput red_1
@@ -828,13 +828,13 @@ runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
     b2' <- doFusionWithDelayed b2 [] toFuse
     rb2' <- renameBody b2'
     pure (incomming, node, IfNode (Let pat aux (If sz b1' rb2' dec)) [], outgoing)
-  SoacNode soac pats aux -> do
+  SoacNode soac pats aux tr -> do
         let lam = H.lambda soac
         newbody <- localScope (scopeOf lam) $ case soac of
           H.Screma {} -> dontFuseScans $ doFusionInner (lambdaBody lam) []
           _           -> doFuseScans   $ doFusionInner (lambdaBody lam) []
         let newLam = lam {lambdaBody = newbody}
-        let newNode = SoacNode (H.setLambda newLam soac) pats aux
+        let newNode = SoacNode (H.setLambda newLam soac) pats aux tr
         pure (incomming, node, newNode, outgoing)
   _ -> return c
   where

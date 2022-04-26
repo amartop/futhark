@@ -5,6 +5,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use tuple-section" #-}
 module Futhark.Optimise.GraphRep (module Futhark.Optimise.GraphRep)
   -- (FusionEnvM,
   -- FusionEnv,
@@ -63,11 +65,12 @@ data EdgeT =
   | Fake VName
   | Res VName
   | ScanRed VName
+  | TrDep VName
   deriving (Eq, Ord)
 
 data NodeT =
     StmNode (Stm SOACS)
-  | SoacNode (H.SOAC SOACS) (Pat (LetDec SOACS)) (StmAux (ExpDec SOACS))
+  | SoacNode (H.SOAC SOACS) (Pat (LetDec SOACS)) (StmAux (ExpDec SOACS)) H.ArrayTransforms
   | RNode VName
   | InNode VName
   | FinalNode [Stm SOACS] NodeT
@@ -85,6 +88,7 @@ getName edgeT = case edgeT of
   Fake vn -> vn
   Res vn -> vn
   ScanRed vn -> vn
+  TrDep   vn -> vn
 
 
 setName :: VName -> EdgeT -> EdgeT
@@ -96,6 +100,8 @@ setName vn edgeT = case edgeT of
   Fake _ -> Fake vn
   Res _ -> Res vn
   ScanRed _ -> ScanRed vn
+  TrDep   _ -> TrDep vn
+
 
 
 
@@ -108,8 +114,8 @@ instance Substitute EdgeT where
 instance Substitute NodeT where
   substituteNames m nodeT = case nodeT of
     StmNode stm -> StmNode (f stm)
-    SoacNode so pat sa -> let lam = H.lambda so in
-      SoacNode (H.setLambda (f lam) so) (f pat) (f sa) -- this may be ridiculously buggy, just a heads-up
+    SoacNode so pat sa ts -> let lam = H.lambda so in
+      SoacNode (H.setLambda (f lam) so) (f pat) (f sa) (f ts) -- this may be ridiculously buggy, just a heads-up
     RNode vn -> RNode (f vn)
     InNode vn -> InNode (f vn)
     FinalNode stms nt -> FinalNode (map f stms) (f nt)
@@ -129,6 +135,7 @@ instance Show EdgeT where
   show (Res _) = "Res"
   show (Alias _) = "Alias"
   show (ScanRed vName) = "SR " <> ppr vName
+  show (TrDep vName) = "Tr " <> ppr vName
 
 -- inputs could have their own edges - to facilitate fusion
 
@@ -136,7 +143,7 @@ instance Show EdgeT where
 -- nodeT_to_str
 instance Show NodeT where
     show (StmNode (Let pat _ _)) = L.intercalate ", " $ map ppr $ patNames pat
-    show (SoacNode _ pat _) = L.intercalate ", " $ map ppr $ patNames pat
+    show (SoacNode _ pat _ _) = L.intercalate ", " $ map ppr $ patNames pat
     show (FinalNode stms nt) = show nt
     show (RNode name)  = ppr $ "Res: "   ++ ppr name
     show (InNode name) = ppr $ "Input: " ++ ppr name
@@ -338,7 +345,7 @@ genEdges l_stms edge_fun g = do
                                               Just to <- [M.lookup dep name_map]]
 
 depGraphInsertEdges :: [DepEdge] -> DepGraphAug
-depGraphInsertEdges edgs g = return $ mkGraph (labNodes g) (edgs ++ labEdges g)
+depGraphInsertEdges edgs g = return $ insEdges edgs g
 
 applyAugs :: [DepGraphAug] -> DepGraphAug
 applyAugs augs g = foldlM (flip ($)) g augs
@@ -367,13 +374,51 @@ mapAcrossNodeTs f = mapAcross f'
         return (ins, n, nodeT', outs)
 
 
+-- mapAcrossWithSE :: (DepContext -> DepGraphAug) -> DepGraphAug
+-- mapAcrossWithSE f g =
+--   applyAugs (map (f . contextFromNode) (nodes g))
+
+addTransforms :: DepGraphAug
+addTransforms g =
+  applyAugs (map helper ns) g
+  where
+    ns = nodes g
+    helper :: Node -> DepGraphAug
+    helper n g = case lab g n of
+      Just (StmNode (Let _ aux exp))
+        | Just (vn, transform) <- H.transformFromExp (stmAuxCerts aux) exp,
+          [prevNode] <- suc g n,
+          (incomming, n', SoacNode soac pats aux old_ts, outgoing) <- context g prevNode
+        -> do
+          let sucNodes = pre g n'
+          g' <- depGraphInsertEdges (map (\nd -> (nd,n', TrDep vn)) sucNodes) g
+          contractEdge n (incomming, n', SoacNode soac pats aux (old_ts H.|> transform), outgoing) g
+      _ -> pure g
+-- the context part could be nicer
+
+
+
+-- updateContext :: DepContext -> (NodeT -> NodeT) -> DepContext
+-- updateContext (incomming, n, nt, outgoing) f = (incomming, n, f nt, outgoing)
+
+
+updateNode :: Node -> (NodeT -> Maybe NodeT) -> DepGraphAug
+updateNode n f g =
+  case context g n of
+    (ins, _, lab, outs) ->
+      case f lab of
+        Just newLab ->
+          pure $ (&) (ins, n, newLab, outs) (delNode n g)
+        Nothing -> pure g
+
+
 
 nodeToSoacNode :: NodeT -> FusionEnvM NodeT
 nodeToSoacNode n@(StmNode s@(Let pats aux op)) = case op of
   Op {} -> do
     maybeSoac <- H.fromExp op
     case maybeSoac of
-      Right hsoac -> pure $ SoacNode hsoac pats aux
+      Right hsoac -> pure $ SoacNode hsoac pats aux H.noTransforms
       Left H.NotSOAC -> pure n
   -- add if, loops, (maybe transformations)
   DoLoop {} -> -- loop-node
@@ -630,7 +675,7 @@ getOutputs node = case node of
   (IfNode stm nodes) -> getStmNames stm
   (DoNode stm nodes) -> getStmNames stm
   (FinalNode stms _) -> error "Final nodes cannot generate edges" -- concatMap getStmNames stms
-  (SoacNode _ pats _) -> patNames pats
+  (SoacNode _ pats _ _) -> patNames pats
 
 --- /Inspecting Stms ---
 
@@ -643,7 +688,7 @@ mapT f (a,b) = (f a, f b)
 finalizeNode :: NodeT -> FusionEnvM [Stm SOACS]
 finalizeNode nt = case nt of
   StmNode stm -> pure [stm]
-  SoacNode soac pats aux -> do
+  SoacNode soac pats aux outputTransforms -> do -- TODO handle these
     (_, stms) <-  runBuilder $ do
       new_soac <- H.toSOAC soac
       auxing aux $ letBind pats $ Op new_soac
