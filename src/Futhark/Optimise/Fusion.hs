@@ -222,6 +222,10 @@ isScanRed :: EdgeT -> Bool
 isScanRed (ScanRed _) = True
 isScanRed _ = False
 
+isTrDep :: EdgeT -> Bool
+isTrDep (TrDep _) = True
+isTrDep _ = False
+
 
 -- how to check that no other successor of source reaches target:
 -- all mapM (not reachable) (suc graph source - target)
@@ -291,17 +295,16 @@ tryFuseNodesInGraph node_1 node_2 g
         fres <- fuseContexts edgs infusable_nodes (context g node_1) (context g node_2)
         case fres of
           Just newcxt@(inputs, _, nodeT, outputs) ->
-            if null fused then contractEdge node_2 newcxt g
+            if null fusedC then contractEdge node_2 newcxt g
             else do
               new_node <- makeCopies nodeT
               contractEdge node_2 (inputs, node_1, new_node, outputs) g
-          Just _ -> error "fuseContexts did not return an SNode"
           Nothing -> pure g
       else pure g
     where
       edgs = map edgeLabel $ edgesBetween g node_1 node_2
       -- sorry about this
-      fused = map getName $ filter isCons edgs
+      fusedC = map getName $ filter isCons edgs
       infusable_nodes = map depsFromEdge
         (concatMap (edgesBetween g node_1) (filter (/=node_2) $ pre g node_1))
                                   -- L.\\ edges_between g node_1 node_2)
@@ -399,6 +402,9 @@ fuseContexts edgs infusable
 
 
 fuseNodeT :: [EdgeT] -> [VName] ->  (NodeT, [EdgeT]) -> (NodeT, [EdgeT]) -> FusionEnvM (Maybe NodeT)
+-- fuseNodeT edgs infusible (s1, e1s) (s2, e2s)
+--   | ns <- map getName $ filter isTrDep $ map edgeLabel $ edgs,
+--     (not . null) transformNames
 fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
   case (s1, s2) of
     -- requirements for this type of fusion should be really tough
@@ -957,8 +963,8 @@ mergeForms :: StreamForm SOACS -> StreamForm SOACS -> StreamForm SOACS
 mergeForms Sequential Sequential =  Sequential
 mergeForms (Parallel _ comm2 lam2r) (Parallel o1 comm1 lam1r) =
   Parallel o1 (comm1 <> comm2) (mergeReduceOps lam1r lam2r)
-mergeForms s _ = s
-
+mergeForms s _ = error "fusing sequential"
+-- BUG should fail
 
 -- copied
 mergeReduceOps :: Lambda rep -> Lambda rep -> Lambda rep

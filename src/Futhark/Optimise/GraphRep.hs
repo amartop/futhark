@@ -122,19 +122,31 @@ instance Substitute NodeT where
   substituteNames m nodeT = case nodeT of
     StmNode stm -> StmNode (f stm)
     SoacNode so pat sa ->
-      let lam = f (H.lambda so) in
-      let inps= f (H.inputs so) in
-      let so' = H.setLambda lam $ H.setInputs inps so in
-      SoacNode so' (f pat) (f sa)
+      let so' = case so of
+                H.Stream se sf la ses ins -> H.Stream (f se) (fStreamForm sf) (f la) (f ses) (f ins)
+                H.Scatter se la ins x0 -> H.Scatter (f se) (f la) (f ins) (map fShape x0)
+                H.Screma se sf ins -> H.Screma (f se) (fScremaForm sf) (f ins)
+                H.Hist se hos la ins -> H.Hist (f se) (map fHistOp hos) (f la) (f ins)
+      in SoacNode so' (f pat) (f sa)
     RNode vn -> RNode (f vn)
     InNode vn -> InNode (f vn)
     FinalNode stms nt -> FinalNode (map f stms) (f nt)
     IfNode stm nodes -> IfNode (f stm) (map f nodes)
     DoNode stm nodes -> DoNode (f stm) (map f nodes)
-
     where
       f :: Substitute a => a -> a
       f = substituteNames m
+      fStreamForm :: StreamForm SOACS -> StreamForm SOACS
+      fStreamForm (Parallel o comm lam0) =
+        Parallel o comm (f lam0)
+      fStreamForm s = s
+      fShape (shp, i, vn) = (f shp, i, f vn)
+      fHistOp (HistOp shape rf op_arrs nes op) =
+          HistOp (f shape) (f rf) (f op_arrs) (f nes) (f op)
+      fScremaForm (ScremaForm scans reds lam) = ScremaForm (map fScan scans) (map fRed reds) (f lam)
+      fScan (Scan red_lam red_nes) = Scan (f red_lam) (map f red_nes)
+      fRed (Reduce comm red_lam red_nes) = Reduce comm (f red_lam) (map f red_nes)
+
 
 
 instance Show EdgeT where
@@ -414,7 +426,8 @@ addTransforms g =
           [n'] <- L.nub $ suc g n,
           vn `notElem` map (getName . edgeLabel) (filter (\(a,_,_) -> a/=n) (inn g n')),
           Just (SoacNode soac outps aux2) <- lab g n',
-          [trName] <- patNames pat
+          [trName] <- patNames pat,
+          all isRealNode (mapMaybe (lab g) (pre g n))
         -> do
           let sucNodes = pre g n
           let edgs = inn g n
@@ -753,7 +766,6 @@ genOutTransformStms inps = do
   let names = map H.inputArray inps'
   newNames <- mapM newName names
   let newInputs = zipWith inputSetName newNames inps'
-  -- "la mente a volte sbaglia. Il cuore non perdona" xP
   let weirdScope = scopeOfPat (basicPat (map inputToIdent newInputs))
   (namesToRep, stms) <- localScope weirdScope  $ runBuilder (H.inputsToSubExps newInputs)
   pure (makeMap names newNames, substituteNames (makeMap namesToRep names) stms)
