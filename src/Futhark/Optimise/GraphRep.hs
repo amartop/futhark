@@ -45,7 +45,7 @@ import Control.Monad.Reader (ReaderT (runReaderT))
 import Foreign (bitReverse32)
 import Futhark.MonadFreshNames (newName)
 import Debug.Trace (trace)
-import Data.Maybe (isJust, isNothing)
+import Data.Maybe (isJust, isNothing, mapMaybe)
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -74,6 +74,13 @@ data NodeT =
   | IfNode (Stm SOACS) [(NodeT, [EdgeT])]
   | DoNode (Stm SOACS) [(NodeT, [EdgeT])]
   deriving (Eq)
+
+
+getSoac :: NodeT -> Maybe (H.SOAC SOACS)
+getSoac s = case s of
+  SoacNode soac _ _ -> Just soac
+  _ -> Nothing
+
 
 
 getName :: EdgeT -> VName
@@ -290,6 +297,15 @@ type DepGraphAug = DepGraph -> FusionEnvM DepGraph
     -- gen_names_map :: [DepNode] -> M.Map VName Node
     -- gen_names_map s = M.fromList $ concatMap gen_dep_list s
 
+-- the same as that fixed-point function in util
+keepTrying :: DepGraphAug -> DepGraphAug
+keepTrying f g =
+  do
+  r  <- f g
+  r2 <- f r
+  if equal r r2 then pure r
+  else keepTrying f r2
+
 emptyG2 :: [Stm SOACS] -> [VName] -> [VName] -> DepGraph
 emptyG2 stms res inputs = mkGraph (label_nodes (snodes ++ rnodes ++ inNodes)) []
   where
@@ -325,7 +341,7 @@ addDepEdges = applyAugs
   addResEdges,
   addAliases,--, appendTransformations
   convertGraph, -- this one must be done last
-  addTransforms]
+  keepTrying addTransforms]
 
 
 makeMapping :: DepGraphAug
@@ -396,6 +412,7 @@ addTransforms g =
       Just (StmNode (Let pat aux exp))
         | Just (vn, transform) <- H.transformFromExp (stmAuxCerts aux) exp,
           [n'] <- L.nub $ suc g n,
+          vn `notElem` map (getName . edgeLabel) (filter (\(a,_,_) -> a/=n) (inn g n')),
           Just (SoacNode soac outps aux2) <- lab g n',
           [trName] <- patNames pat
         -> do
@@ -406,8 +423,8 @@ addTransforms g =
                                     then inp
                                     else H.addTransform transform inp)  outps
           g'' <- applyAugs [substituteNamesInNodes (makeMap [trName] [vn]) sucNodes,
-                     substituteNamesInEdges (makeMap [trName] [vn]) edgs
-                     ] g'
+                            substituteNamesInEdges (makeMap [trName] [vn]) edgs
+                           ] g'
           let ctx = mergedContext (SoacNode soac outps' (aux <> aux2)) (context g'' n') (context g'' n)
           contractEdge n ctx g''
       _ -> pure g
@@ -721,9 +738,18 @@ mapT f (a,b) = (f a, f b)
 inputSetName ::  VName  -> H.Input -> H.Input
 inputSetName vn (H.Input ts _ tp) = H.Input ts vn tp
 
+
+isNotVarInput :: [H.Input] -> [H.Input]
+isNotVarInput = filter (isNothing . H.isVarInput)
+
+hasNoDifferingInputs :: [H.Input] -> [H.Input] -> Bool
+hasNoDifferingInputs is1 is2 =
+  let (vs1, vs2) = mapT isNotVarInput (is1, is2 L.\\ is1) in
+  null $ vs1 `L.intersect` vs2
+
 genOutTransformStms :: [H.Input] -> FusionEnvM (M.Map VName VName,Stms SOACS)
 genOutTransformStms inps = do
-  let inps' = filter (isNothing . H.isVarInput) inps
+  let inps' = isNotVarInput inps
   let names = map H.inputArray inps'
   newNames <- mapM newName names
   let newInputs = zipWith inputSetName newNames inps'

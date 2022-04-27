@@ -375,11 +375,11 @@ fuseContexts2 ::  DepContext -> DepContext -> FusionEnvM (Maybe DepContext)
 -- fuse the nodes / contexts
 fuseContexts2 c1@(_, _, nodeT1, _)
               c2@(_, _, nodeT2, _)
-            = do
-              fres <- hFuseNodeT nodeT1 nodeT2
-              case fres of
-               Just nodeT -> pure $ Just (mergedContext nodeT c1 c2)
-               Nothing -> pure Nothing
+  = do
+    fres <- hFuseNodeT nodeT1 nodeT2
+    case fres of
+      Just nodeT -> pure $ Just (mergedContext nodeT c1 c2)
+      Nothing -> pure Nothing
 fuseContexts2 _ _ = pure Nothing
 
 
@@ -639,79 +639,86 @@ resFromLambda =  bodyResult . lambdaBody
 
 
 hFuseNodeT :: NodeT-> NodeT-> FusionEnvM (Maybe NodeT)
-hFuseNodeT s1 s2 = case (s1, s2) of
-  (SoacNode soac1 pats1 aux1,
-   SoacNode soac2 pats2 aux2) -> case (soac1, soac2) of
-      ( H.Screma {},
-        H.Screma {}) -> fuseNodeT [] (map H.inputArray pats1) (s1, []) (s2, [])
-      ( H.Scatter s_exp1 lam_1 i1 outputs1 ,
-        H.Scatter s_exp2 lam_2 i2 outputs2)
-        | s_exp1 == s_exp2 ->
-          let soac = H.Scatter s_exp2 lam fused_inputs outputs  in
-          pure $ Just $ SoacNode soac pats aux
-            where
-              pats = pats1 <> pats2
-              aux = aux1 <> aux2
-              outputs = outputs1 <> outputs2
-              --o1 = patNames pats1
+hFuseNodeT s1 s2 |
+  Just soac1 <- getSoac s1,
+  Just soac2 <- getSoac s2,
+  hasNoDifferingInputs (inputs soac1) (inputs soac2)
+    =
+    case (s1, s2) of
+      (SoacNode soac1 pats1 aux1,
+       SoacNode soac2 pats2 aux2) -> case (soac1, soac2) of
+          ( H.Screma {},
+            H.Screma {}) -> fuseNodeT [] (map H.inputArray pats1) (s1, []) (s2, [])
+          ( H.Scatter s_exp1 lam_1 i1 outputs1 ,
+            H.Scatter s_exp2 lam_2 i2 outputs2)
+            | s_exp1 == s_exp2 ->
+              let soac = H.Scatter s_exp2 lam fused_inputs outputs  in
+              pure $ Just $ SoacNode soac pats aux
+                where
+                  pats = pats1 <> pats2
+                  aux = aux1 <> aux2
+                  outputs = outputs1 <> outputs2
+                  --o1 = patNames pats1
 
-              (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
-              (lam_1_output, lam_2_output) = mapT resFromLambda (lam_1, lam_2)
+                  (lam_1_inputs, lam_2_inputs) = mapT boundByLambda (lam_1, lam_2)
+                  (lam_1_output, lam_2_output) = mapT resFromLambda (lam_1, lam_2)
 
-              fused_inputs = fuseInputs [] i1 i2
-              fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
+                  fused_inputs = fuseInputs [] i1 i2
+                  fused_inputs_inner = changeAll (i1 ++ i2) (lam_1_inputs ++ lam_2_inputs) fused_inputs
 
-              map1 = makeMap (lam_1_inputs ++ lam_2_inputs) (i1 ++ i2)
-              map4 = makeMap fused_inputs fused_inputs_inner
-              map3 = fuseMaps map1 map4
+                  map1 = makeMap (lam_1_inputs ++ lam_2_inputs) (i1 ++ i2)
+                  map4 = makeMap fused_inputs fused_inputs_inner
+                  map3 = fuseMaps map1 map4
 
-              lam' = fuseLambda lam_1 lam_2
+                  lam' = fuseLambda lam_1 lam_2
 
-              lparams = changeAll (i1 ++ i2)
-                (lambdaParams lam_1 ++ lambdaParams lam_2)
-                fused_inputs
+                  lparams = changeAll (i1 ++ i2)
+                    (lambdaParams lam_1 ++ lambdaParams lam_2)
+                    fused_inputs
 
-              (types1, types2) = mapT lambdaReturnType (lam_1, lam_2)
-              (res1, res2) = mapT resFromLambda (lam_1, lam_2)
+                  (types1, types2) = mapT lambdaReturnType (lam_1, lam_2)
+                  (res1, res2) = mapT resFromLambda (lam_1, lam_2)
 
-              (ids1, vals1) = splitScatterResults outputs1 (zip3 types1 res1 lam_1_output)
-              (ids2, vals2) = splitScatterResults outputs2 (zip3 types2 res2 lam_2_output)
-              (types, res, _) = unzip3 $ ids1 ++ ids2 ++ vals1 ++ vals2
+                  (ids1, vals1) = splitScatterResults outputs1 (zip3 types1 res1 lam_1_output)
+                  (ids2, vals2) = splitScatterResults outputs2 (zip3 types2 res2 lam_2_output)
+                  (types, res, _) = unzip3 $ ids1 ++ ids2 ++ vals1 ++ vals2
 
-              lam = substituteNames map3 $ lam' {
-                lambdaParams = lparams,
-                lambdaReturnType = types,
-                lambdaBody = (lambdaBody lam') {bodyResult = res}
-                }
-      ( H.Hist s_exp1 ops_1 lam_1 i1,
-        H.Hist s_exp2 ops_2 lam_2 i2) -- pretty much copied too
-        | s_exp1 == s_exp2 -> do
-          let num_buckets_2 = length ops_2
-          let num_buckets_1 = length ops_1
-          let (body_2, body_1) = (lambdaBody lam_2, lambdaBody lam_1)
-          let body' =
-                Body
-                  { bodyDec = bodyDec body_1, -- body_p and body_c have the same decorations
-                    bodyStms = bodyStms body_2 <> bodyStms body_1,
-                    bodyResult =
-                      take num_buckets_1 (bodyResult body_1)
-                        ++ take num_buckets_2 (bodyResult body_2)
-                        ++ drop num_buckets_1 (bodyResult body_1)
-                        ++ drop num_buckets_2 (bodyResult body_2)
-                  }
-          let lam' = Lambda
-                  { lambdaParams = lambdaParams lam_1 ++ lambdaParams lam_2,
-                    lambdaBody = body',
-                    lambdaReturnType =
-                      replicate (num_buckets_1 + num_buckets_2) (Prim int64)
-                        ++ drop num_buckets_1 (lambdaReturnType lam_1)
-                        ++ drop num_buckets_2 (lambdaReturnType lam_2)
-                  }
-            -- success (outNames ker ++ returned_outvars) $
-          let soac = H.Hist s_exp1  (ops_1 <> ops_2) lam' (i1 <> i2)
-          return $ Just $ SoacNode soac (pats1 <> pats2) (aux1 <> aux2)
+                  lam = substituteNames map3 $ lam' {
+                    lambdaParams = lparams,
+                    lambdaReturnType = types,
+                    lambdaBody = (lambdaBody lam') {bodyResult = res}
+                    }
+          ( H.Hist s_exp1 ops_1 lam_1 i1,
+            H.Hist s_exp2 ops_2 lam_2 i2) -- pretty much copied too
+            | s_exp1 == s_exp2 -> do
+              let num_buckets_2 = length ops_2
+              let num_buckets_1 = length ops_1
+              let (body_2, body_1) = (lambdaBody lam_2, lambdaBody lam_1)
+              let body' =
+                    Body
+                      { bodyDec = bodyDec body_1, -- body_p and body_c have the same decorations
+                        bodyStms = bodyStms body_2 <> bodyStms body_1,
+                        bodyResult =
+                          take num_buckets_1 (bodyResult body_1)
+                            ++ take num_buckets_2 (bodyResult body_2)
+                            ++ drop num_buckets_1 (bodyResult body_1)
+                            ++ drop num_buckets_2 (bodyResult body_2)
+                      }
+              let lam' = Lambda
+                      { lambdaParams = lambdaParams lam_1 ++ lambdaParams lam_2,
+                        lambdaBody = body',
+                        lambdaReturnType =
+                          replicate (num_buckets_1 + num_buckets_2) (Prim int64)
+                            ++ drop num_buckets_1 (lambdaReturnType lam_1)
+                            ++ drop num_buckets_2 (lambdaReturnType lam_2)
+                      }
+                -- success (outNames ker ++ returned_outvars) $
+              let soac = H.Hist s_exp1  (ops_1 <> ops_2) lam' (i1 <> i2)
+              return $ Just $ SoacNode soac (pats1 <> pats2) (aux1 <> aux2)
+          _ -> pure Nothing
       _ -> pure Nothing
-  _ -> pure Nothing
+hFuseNodeT _ _ = pure Nothing
+
 
 
 
@@ -757,14 +764,7 @@ fuseLambda lam_1 lam_2  =
     -- makeMap :: [a] -> [b] -> M.Map a b
     -- makeMap x y = M.fromList $ zip x y
 
--- the same as that fixed-point function in util
-keepTrying :: DepGraphAug -> DepGraphAug
-keepTrying f g =
-  do
-  r  <- f g
-  r2 <- f r
-  if equal r r2 then pure r
-  else keepTrying f r2
+
 
 -- substituteNames
 
