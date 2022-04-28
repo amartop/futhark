@@ -549,6 +549,10 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
           --       (SoacNode s1' pats1 aux1, e1s)
           --       (SoacNode s2' pats2 aux2, e2s)
           ( H.Stream s_exp1 sform1 lam1 nes1 i1,
+            H.Stream s_exp2 sform2 lam2 nes2 i2)
+            | (sform1 == Sequential)  /= (sform2 == Sequential) ->
+              pure Nothing
+          ( H.Stream s_exp1 sform1 lam1 nes1 i1,
             H.Stream s_exp2 sform2 lam2 nes2 i2) -> do
               let chunk1 = head $ lambdaParams lam1
               let chunk2 = head $ lambdaParams lam2
