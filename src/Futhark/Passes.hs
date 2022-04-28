@@ -56,7 +56,7 @@ standardPipeline =
       performCSE True,
       simplifySOACS,
       -- We run fusion twice
-      F.fuseSOACs,
+      -- F.fuseSOACs,
       fuseSOACs,
       performCSE True,
       simplifySOACS,
