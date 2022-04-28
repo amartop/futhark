@@ -4134,7 +4134,7 @@ static inline f16 fpconv_f64_f16(double x) {
 
 static int init_constants(struct futhark_context *);
 static int free_constants(struct futhark_context *);
-static int32_t static_array_realtype_6502[64] = {-680876936, -389564586,
+static int32_t static_array_realtype_6639[64] = {-680876936, -389564586,
                                                  606105819, -1044525330,
                                                  -176418897, 1200080426,
                                                  -1473231341, -45705983,
@@ -4166,7 +4166,7 @@ static int32_t static_array_realtype_6502[64] = {-680876936, -389564586,
                                                  -1560198380, 1309151649,
                                                  -145523070, -1120210379,
                                                  718787259, -343485551};
-static int32_t static_array_realtype_6503[64] = {7, 12, 17, 22, 7, 12, 17, 22,
+static int32_t static_array_realtype_6640[64] = {7, 12, 17, 22, 7, 12, 17, 22,
                                                  7, 12, 17, 22, 7, 12, 17, 22,
                                                  5, 9, 14, 20, 5, 9, 14, 20, 5,
                                                  9, 14, 20, 5, 9, 14, 20, 4, 11,
@@ -4174,7 +4174,7 @@ static int32_t static_array_realtype_6503[64] = {7, 12, 17, 22, 7, 12, 17, 22,
                                                  16, 23, 4, 11, 16, 23, 6, 10,
                                                  15, 21, 6, 10, 15, 21, 6, 10,
                                                  15, 21, 6, 10, 15, 21};
-static int8_t mainzistatic_array_realtype_6511[4] = {(int8_t) -128, (int8_t) 0,
+static int8_t mainzistatic_array_realtype_6648[4] = {(int8_t) -128, (int8_t) 0,
                                                      (int8_t) 0, (int8_t) 0};
 struct memblock {
     int *references;
@@ -4233,12 +4233,12 @@ struct futhark_context {
     int64_t peak_mem_usage_default;
     int64_t cur_mem_usage_default;
     struct {
-        struct memblock mem_6400;
-        struct memblock mem_6402;
+        struct memblock mem_6537;
+        struct memblock mem_6539;
     } constants;
-    struct memblock static_array_6500;
-    struct memblock static_array_6501;
-    struct memblock mainzistatic_array_6488;
+    struct memblock static_array_6637;
+    struct memblock static_array_6638;
+    struct memblock mainzistatic_array_6625;
 };
 struct futhark_context *futhark_context_new(struct futhark_context_config *cfg)
 {
@@ -4260,14 +4260,14 @@ struct futhark_context *futhark_context_new(struct futhark_context_config *cfg)
     create_lock(&ctx->lock);
     ctx->peak_mem_usage_default = 0;
     ctx->cur_mem_usage_default = 0;
-    ctx->static_array_6500 = (struct memblock) {NULL,
-                                                (char *) static_array_realtype_6502,
+    ctx->static_array_6637 = (struct memblock) {NULL,
+                                                (char *) static_array_realtype_6639,
                                                 0};
-    ctx->static_array_6501 = (struct memblock) {NULL,
-                                                (char *) static_array_realtype_6503,
+    ctx->static_array_6638 = (struct memblock) {NULL,
+                                                (char *) static_array_realtype_6640,
                                                 0};
-    ctx->mainzistatic_array_6488 = (struct memblock) {NULL,
-                                                      (char *) mainzistatic_array_realtype_6511,
+    ctx->mainzistatic_array_6625 = (struct memblock) {NULL,
+                                                      (char *) mainzistatic_array_realtype_6648,
                                                       0};
     init_constants(ctx);
     return ctx;
@@ -4426,8 +4426,8 @@ int futhark_context_clear_caches(struct futhark_context *ctx)
 }
 
 static int futrts_entry_main(struct futhark_context *ctx,
-                             struct memblock *mem_out_p_6504,
-                             struct memblock ms_mem_6403, int64_t n_5767);
+                             struct memblock *mem_out_p_6641,
+                             struct memblock ms_mem_6540, int64_t n_6203);
 
 static int init_constants(struct futhark_context *ctx)
 {
@@ -4435,32 +4435,32 @@ static int init_constants(struct futhark_context *ctx)
     
     int err = 0;
     
-    #define mem_6400 (ctx->constants.mem_6400)
-    #define mem_6402 (ctx->constants.mem_6402)
-    mem_6400.references = NULL;
-    mem_6402.references = NULL;
-    if (memblock_alloc(ctx, &mem_6400, (int64_t) 256, "mem_6400")) {
+    #define mem_6537 (ctx->constants.mem_6537)
+    #define mem_6539 (ctx->constants.mem_6539)
+    mem_6537.references = NULL;
+    mem_6539.references = NULL;
+    if (memblock_alloc(ctx, &mem_6537, (int64_t) 256, "mem_6537")) {
         err = 1;
         goto cleanup;
     }
     
-    struct memblock static_array_6500 = ctx->static_array_6500;
+    struct memblock static_array_6637 = ctx->static_array_6637;
     
     if ((int64_t) 256 > 0)
-        memmove(mem_6400.mem + (int64_t) 0, static_array_6500.mem + (int64_t) 0,
+        memmove(mem_6537.mem + (int64_t) 0, static_array_6637.mem + (int64_t) 0,
                 (int64_t) 256);
-    if (memblock_alloc(ctx, &mem_6402, (int64_t) 256, "mem_6402")) {
+    if (memblock_alloc(ctx, &mem_6539, (int64_t) 256, "mem_6539")) {
         err = 1;
         goto cleanup;
     }
     
-    struct memblock static_array_6501 = ctx->static_array_6501;
+    struct memblock static_array_6638 = ctx->static_array_6638;
     
     if ((int64_t) 256 > 0)
-        memmove(mem_6402.mem + (int64_t) 0, static_array_6501.mem + (int64_t) 0,
+        memmove(mem_6539.mem + (int64_t) 0, static_array_6638.mem + (int64_t) 0,
                 (int64_t) 256);
-    #undef mem_6400
-    #undef mem_6402
+    #undef mem_6537
+    #undef mem_6539
     
   cleanup:
     return err;
@@ -4468,11 +4468,11 @@ static int init_constants(struct futhark_context *ctx)
 static int free_constants(struct futhark_context *ctx)
 {
     (void) ctx;
-    if (memblock_unref(ctx, &ctx->constants.mem_6400,
-                       "ctx->constants.mem_6400") != 0)
+    if (memblock_unref(ctx, &ctx->constants.mem_6537,
+                       "ctx->constants.mem_6537") != 0)
         return 1;
-    if (memblock_unref(ctx, &ctx->constants.mem_6402,
-                       "ctx->constants.mem_6402") != 0)
+    if (memblock_unref(ctx, &ctx->constants.mem_6539,
+                       "ctx->constants.mem_6539") != 0)
         return 1;
     return 0;
 }
@@ -4551,452 +4551,452 @@ const int64_t *futhark_shape_u8_1d(struct futhark_context *ctx,
 }
 
 static int futrts_entry_main(struct futhark_context *ctx,
-                             struct memblock *mem_out_p_6504,
-                             struct memblock ms_mem_6403, int64_t n_5767)
+                             struct memblock *mem_out_p_6641,
+                             struct memblock ms_mem_6540, int64_t n_6203)
 {
     (void) ctx;
     
     int err = 0;
-    size_t mem_6405_cached_sizze_6505 = 0;
-    unsigned char *mem_6405 = NULL;
-    size_t mem_6407_cached_sizze_6506 = 0;
-    unsigned char *mem_6407 = NULL;
-    size_t mem_6411_cached_sizze_6507 = 0;
-    unsigned char *mem_6411 = NULL;
-    size_t mem_6456_cached_sizze_6508 = 0;
-    unsigned char *mem_6456 = NULL;
-    size_t mem_6458_cached_sizze_6509 = 0;
-    unsigned char *mem_6458 = NULL;
-    size_t mem_6475_cached_sizze_6510 = 0;
-    unsigned char *mem_6475 = NULL;
-    struct memblock mem_6485;
+    size_t mem_6542_cached_sizze_6642 = 0;
+    unsigned char *mem_6542 = NULL;
+    size_t mem_6544_cached_sizze_6643 = 0;
+    unsigned char *mem_6544 = NULL;
+    size_t mem_6548_cached_sizze_6644 = 0;
+    unsigned char *mem_6548 = NULL;
+    size_t mem_6593_cached_sizze_6645 = 0;
+    unsigned char *mem_6593 = NULL;
+    size_t mem_6595_cached_sizze_6646 = 0;
+    unsigned char *mem_6595 = NULL;
+    size_t mem_6612_cached_sizze_6647 = 0;
+    unsigned char *mem_6612 = NULL;
+    struct memblock mem_6622;
     
-    mem_6485.references = NULL;
+    mem_6622.references = NULL;
     
-    struct memblock mem_out_6487;
+    struct memblock mem_out_6624;
     
-    mem_out_6487.references = NULL;
+    mem_out_6624.references = NULL;
     
-    struct memblock mem_6400 = ctx->constants.mem_6400;
-    struct memblock mem_6402 = ctx->constants.mem_6402;
-    int64_t y_6000 = smod64(n_5767, (int64_t) 64);
-    int64_t padding_6001 = sub64((int64_t) 64, y_6000);
-    int64_t n_padded_6002 = add64(n_5767, padding_6001);
-    int64_t i64_arg_6004 = mul64((int64_t) 8, n_5767);
-    int32_t unsign_arg_6005 = zext_i64_i32(i64_arg_6004);
-    int8_t u32_res_6181 = zext_i32_i8(unsign_arg_6005);
-    int32_t u32_arg_6182 = udiv32(unsign_arg_6005, 256);
-    int8_t u32_res_6183 = zext_i32_i8(u32_arg_6182);
-    int32_t u32_arg_6184 = udiv32(unsign_arg_6005, 65536);
-    int8_t u32_res_6185 = zext_i32_i8(u32_arg_6184);
-    int32_t u32_arg_6186 = udiv32(unsign_arg_6005, 16777216);
-    int8_t u32_res_6187 = zext_i32_i8(u32_arg_6186);
+    struct memblock mem_6537 = ctx->constants.mem_6537;
+    struct memblock mem_6539 = ctx->constants.mem_6539;
+    int64_t y_6205 = smod64(n_6203, (int64_t) 64);
+    int64_t padding_6206 = sub64((int64_t) 64, y_6205);
+    int64_t n_padded_6207 = add64(n_6203, padding_6206);
+    int64_t i64_arg_6209 = mul64((int64_t) 8, n_6203);
+    int32_t unsign_arg_6210 = zext_i64_i32(i64_arg_6209);
+    int8_t u32_res_6211 = zext_i32_i8(unsign_arg_6210);
+    int32_t u32_arg_6212 = udiv32(unsign_arg_6210, 256);
+    int8_t u32_res_6213 = zext_i32_i8(u32_arg_6212);
+    int32_t u32_arg_6214 = udiv32(unsign_arg_6210, 65536);
+    int8_t u32_res_6215 = zext_i32_i8(u32_arg_6214);
+    int32_t u32_arg_6216 = udiv32(unsign_arg_6210, 16777216);
+    int8_t u32_res_6217 = zext_i32_i8(u32_arg_6216);
     
-    if (mem_6405_cached_sizze_6505 < (int64_t) 4) {
-        err = lexical_realloc(&ctx->error, &mem_6405,
-                              &mem_6405_cached_sizze_6505, (int64_t) 4);
+    if (mem_6542_cached_sizze_6642 < (int64_t) 4) {
+        err = lexical_realloc(&ctx->error, &mem_6542,
+                              &mem_6542_cached_sizze_6642, (int64_t) 4);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
-    ((int8_t *) mem_6405)[(int64_t) 0] = u32_res_6181;
-    ((int8_t *) mem_6405)[(int64_t) 1] = u32_res_6183;
-    ((int8_t *) mem_6405)[(int64_t) 2] = u32_res_6185;
-    ((int8_t *) mem_6405)[(int64_t) 3] = u32_res_6187;
+    ((int8_t *) mem_6542)[(int64_t) 0] = u32_res_6211;
+    ((int8_t *) mem_6542)[(int64_t) 1] = u32_res_6213;
+    ((int8_t *) mem_6542)[(int64_t) 2] = u32_res_6215;
+    ((int8_t *) mem_6542)[(int64_t) 3] = u32_res_6217;
     
-    int64_t replicate_arg_6007 = sub64(padding_6001, (int64_t) 12);
+    int64_t replicate_arg_6219 = sub64(padding_6206, (int64_t) 12);
     
-    if (mem_6407_cached_sizze_6506 < (int64_t) 4) {
-        err = lexical_realloc(&ctx->error, &mem_6407,
-                              &mem_6407_cached_sizze_6506, (int64_t) 4);
+    if (mem_6544_cached_sizze_6643 < (int64_t) 4) {
+        err = lexical_realloc(&ctx->error, &mem_6544,
+                              &mem_6544_cached_sizze_6643, (int64_t) 4);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
     
-    struct memblock mainzistatic_array_6488 = ctx->mainzistatic_array_6488;
+    struct memblock mainzistatic_array_6625 = ctx->mainzistatic_array_6625;
     
     if ((int64_t) 4 > 0)
-        memmove(mem_6407 + (int64_t) 0, mainzistatic_array_6488.mem +
+        memmove(mem_6544 + (int64_t) 0, mainzistatic_array_6625.mem +
                 (int64_t) 0, (int64_t) 4);
     
-    int64_t conc_tmp_6128 = (int64_t) 4 + n_5767;
-    int64_t conc_tmp_6134 = replicate_arg_6007 + conc_tmp_6128;
-    int64_t conc_tmp_6146 = (int64_t) 8 + conc_tmp_6134;
-    int64_t unflatten_arg_6018 = sdiv64(n_padded_6002, (int64_t) 64);
-    int64_t x_6152 = (int64_t) 64 * unflatten_arg_6018;
-    bool dim_ok_6153 = x_6152 == conc_tmp_6146;
-    bool dim_ok_cert_6154;
+    int64_t conc_tmp_6222 = (int64_t) 4 + n_6203;
+    int64_t conc_tmp_6223 = replicate_arg_6219 + conc_tmp_6222;
+    int64_t conc_tmp_6224 = (int64_t) 8 + conc_tmp_6223;
+    int64_t unflatten_arg_6226 = sdiv64(n_padded_6207, (int64_t) 64);
+    int64_t x_6227 = (int64_t) 64 * unflatten_arg_6226;
+    bool dim_ok_6228 = x_6227 == conc_tmp_6224;
+    bool dim_ok_cert_6229;
     
-    if (!dim_ok_6153) {
+    if (!dim_ok_6228) {
         ctx->error = msgprintf("Error: %s%lld%s%lld%s%lld%s\n\nBacktrace:\n%s",
                                "Cannot unflatten array of shape [",
-                               (long long) conc_tmp_6146,
+                               (long long) conc_tmp_6224,
                                "] to array of shape [",
-                               (long long) unflatten_arg_6018, "][",
+                               (long long) unflatten_arg_6226, "][",
                                (long long) (int64_t) 64, "]",
                                "-> #0  /prelude/array.fut:141:3-33\n   #1  sample_programs/md5.fut:87:43-80\n   #2  sample_programs/md5.fut:79:1-88:44\n");
         err = FUTHARK_PROGRAM_ERROR;
         goto cleanup;
     }
     
-    int64_t binop_y_6409 = (int64_t) 64 * unflatten_arg_6018;
-    int64_t bytes_6410 = smax64((int64_t) 0, binop_y_6409);
+    int64_t binop_y_6546 = (int64_t) 64 * unflatten_arg_6226;
+    int64_t bytes_6547 = smax64((int64_t) 0, binop_y_6546);
     
-    if (mem_6411_cached_sizze_6507 < bytes_6410) {
-        err = lexical_realloc(&ctx->error, &mem_6411,
-                              &mem_6411_cached_sizze_6507, bytes_6410);
+    if (mem_6548_cached_sizze_6644 < bytes_6547) {
+        err = lexical_realloc(&ctx->error, &mem_6548,
+                              &mem_6548_cached_sizze_6644, bytes_6547);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
     
-    int64_t index_concat_add_6374 = add64((int64_t) 4, conc_tmp_6134);
+    int64_t index_concat_add_6511 = add64((int64_t) 4, conc_tmp_6223);
     
-    for (int64_t i_6286 = 0; i_6286 < unflatten_arg_6018; i_6286++) {
-        int64_t binop_x_6301 = (int64_t) 64 * i_6286;
+    for (int64_t i_6423 = 0; i_6423 < unflatten_arg_6226; i_6423++) {
+        int64_t binop_x_6438 = (int64_t) 64 * i_6423;
         
-        for (int32_t i_6293 = 0; i_6293 < 16; i_6293++) {
-            int64_t i_6282 = sext_i32_i64(i_6293);
-            int64_t new_index_6294 = (int64_t) 4 * i_6282;
-            int64_t new_index_6302 = new_index_6294 + binop_x_6301;
-            bool index_concat_cmp_6376 = sle64(index_concat_add_6374,
-                                               new_index_6302);
-            int8_t index_concat_branch_6392;
+        for (int32_t i_6430 = 0; i_6430 < 16; i_6430++) {
+            int64_t i_6419 = sext_i32_i64(i_6430);
+            int64_t new_index_6431 = (int64_t) 4 * i_6419;
+            int64_t new_index_6439 = new_index_6431 + binop_x_6438;
+            bool index_concat_cmp_6513 = sle64(index_concat_add_6511,
+                                               new_index_6439);
+            int8_t index_concat_branch_6529;
             
-            if (index_concat_cmp_6376) {
-                index_concat_branch_6392 = (int8_t) 0;
+            if (index_concat_cmp_6513) {
+                index_concat_branch_6529 = (int8_t) 0;
             } else {
-                bool index_concat_cmp_6379 = sle64(conc_tmp_6134,
-                                                   new_index_6302);
-                int8_t index_concat_branch_6391;
+                bool index_concat_cmp_6516 = sle64(conc_tmp_6223,
+                                                   new_index_6439);
+                int8_t index_concat_branch_6528;
                 
-                if (index_concat_cmp_6379) {
-                    int64_t index_concat_i_6380 = sub64(new_index_6302,
-                                                        conc_tmp_6134);
-                    int8_t index_concat_6381;
+                if (index_concat_cmp_6516) {
+                    int64_t index_concat_i_6517 = sub64(new_index_6439,
+                                                        conc_tmp_6223);
+                    int8_t index_concat_6518;
                     
-                    index_concat_6381 =
-                        ((int8_t *) mem_6405)[index_concat_i_6380];
-                    index_concat_branch_6391 = index_concat_6381;
+                    index_concat_6518 =
+                        ((int8_t *) mem_6542)[index_concat_i_6517];
+                    index_concat_branch_6528 = index_concat_6518;
                 } else {
-                    bool index_concat_cmp_6382 = sle64(conc_tmp_6128,
-                                                       new_index_6302);
-                    int8_t index_concat_branch_6390;
+                    bool index_concat_cmp_6519 = sle64(conc_tmp_6222,
+                                                       new_index_6439);
+                    int8_t index_concat_branch_6527;
                     
-                    if (index_concat_cmp_6382) {
-                        index_concat_branch_6390 = (int8_t) 0;
+                    if (index_concat_cmp_6519) {
+                        index_concat_branch_6527 = (int8_t) 0;
                     } else {
-                        bool index_concat_cmp_6385 = sle64(n_5767,
-                                                           new_index_6302);
-                        int8_t index_concat_branch_6389;
+                        bool index_concat_cmp_6522 = sle64(n_6203,
+                                                           new_index_6439);
+                        int8_t index_concat_branch_6526;
                         
-                        if (index_concat_cmp_6385) {
-                            int64_t index_concat_i_6386 = sub64(new_index_6302,
-                                                                n_5767);
-                            int8_t index_concat_6387;
+                        if (index_concat_cmp_6522) {
+                            int64_t index_concat_i_6523 = sub64(new_index_6439,
+                                                                n_6203);
+                            int8_t index_concat_6524;
                             
-                            index_concat_6387 =
-                                ((int8_t *) mem_6407)[index_concat_i_6386];
-                            index_concat_branch_6389 = index_concat_6387;
+                            index_concat_6524 =
+                                ((int8_t *) mem_6544)[index_concat_i_6523];
+                            index_concat_branch_6526 = index_concat_6524;
                         } else {
-                            int8_t index_concat_6388;
+                            int8_t index_concat_6525;
                             
-                            index_concat_6388 =
-                                ((int8_t *) ms_mem_6403.mem)[new_index_6302];
-                            index_concat_branch_6389 = index_concat_6388;
+                            index_concat_6525 =
+                                ((int8_t *) ms_mem_6540.mem)[new_index_6439];
+                            index_concat_branch_6526 = index_concat_6525;
                         }
-                        index_concat_branch_6390 = index_concat_branch_6389;
+                        index_concat_branch_6527 = index_concat_branch_6526;
                     }
-                    index_concat_branch_6391 = index_concat_branch_6390;
+                    index_concat_branch_6528 = index_concat_branch_6527;
                 }
-                index_concat_branch_6392 = index_concat_branch_6391;
+                index_concat_branch_6529 = index_concat_branch_6528;
             }
             
-            int32_t u8_res_6165 = zext_i8_i32(index_concat_branch_6392);
-            int64_t new_index_6296 = (int64_t) 1 + new_index_6294;
-            int64_t new_index_6304 = new_index_6296 + binop_x_6301;
-            bool index_concat_cmp_6355 = sle64(index_concat_add_6374,
-                                               new_index_6304);
-            int8_t index_concat_branch_6371;
+            int32_t u8_res_6237 = zext_i8_i32(index_concat_branch_6529);
+            int64_t new_index_6433 = (int64_t) 1 + new_index_6431;
+            int64_t new_index_6441 = new_index_6433 + binop_x_6438;
+            bool index_concat_cmp_6492 = sle64(index_concat_add_6511,
+                                               new_index_6441);
+            int8_t index_concat_branch_6508;
             
-            if (index_concat_cmp_6355) {
-                index_concat_branch_6371 = (int8_t) 0;
+            if (index_concat_cmp_6492) {
+                index_concat_branch_6508 = (int8_t) 0;
             } else {
-                bool index_concat_cmp_6358 = sle64(conc_tmp_6134,
-                                                   new_index_6304);
-                int8_t index_concat_branch_6370;
+                bool index_concat_cmp_6495 = sle64(conc_tmp_6223,
+                                                   new_index_6441);
+                int8_t index_concat_branch_6507;
                 
-                if (index_concat_cmp_6358) {
-                    int64_t index_concat_i_6359 = sub64(new_index_6304,
-                                                        conc_tmp_6134);
-                    int8_t index_concat_6360;
+                if (index_concat_cmp_6495) {
+                    int64_t index_concat_i_6496 = sub64(new_index_6441,
+                                                        conc_tmp_6223);
+                    int8_t index_concat_6497;
                     
-                    index_concat_6360 =
-                        ((int8_t *) mem_6405)[index_concat_i_6359];
-                    index_concat_branch_6370 = index_concat_6360;
+                    index_concat_6497 =
+                        ((int8_t *) mem_6542)[index_concat_i_6496];
+                    index_concat_branch_6507 = index_concat_6497;
                 } else {
-                    bool index_concat_cmp_6361 = sle64(conc_tmp_6128,
-                                                       new_index_6304);
-                    int8_t index_concat_branch_6369;
+                    bool index_concat_cmp_6498 = sle64(conc_tmp_6222,
+                                                       new_index_6441);
+                    int8_t index_concat_branch_6506;
                     
-                    if (index_concat_cmp_6361) {
-                        index_concat_branch_6369 = (int8_t) 0;
+                    if (index_concat_cmp_6498) {
+                        index_concat_branch_6506 = (int8_t) 0;
                     } else {
-                        bool index_concat_cmp_6364 = sle64(n_5767,
-                                                           new_index_6304);
-                        int8_t index_concat_branch_6368;
+                        bool index_concat_cmp_6501 = sle64(n_6203,
+                                                           new_index_6441);
+                        int8_t index_concat_branch_6505;
                         
-                        if (index_concat_cmp_6364) {
-                            int64_t index_concat_i_6365 = sub64(new_index_6304,
-                                                                n_5767);
-                            int8_t index_concat_6366;
+                        if (index_concat_cmp_6501) {
+                            int64_t index_concat_i_6502 = sub64(new_index_6441,
+                                                                n_6203);
+                            int8_t index_concat_6503;
                             
-                            index_concat_6366 =
-                                ((int8_t *) mem_6407)[index_concat_i_6365];
-                            index_concat_branch_6368 = index_concat_6366;
+                            index_concat_6503 =
+                                ((int8_t *) mem_6544)[index_concat_i_6502];
+                            index_concat_branch_6505 = index_concat_6503;
                         } else {
-                            int8_t index_concat_6367;
+                            int8_t index_concat_6504;
                             
-                            index_concat_6367 =
-                                ((int8_t *) ms_mem_6403.mem)[new_index_6304];
-                            index_concat_branch_6368 = index_concat_6367;
+                            index_concat_6504 =
+                                ((int8_t *) ms_mem_6540.mem)[new_index_6441];
+                            index_concat_branch_6505 = index_concat_6504;
                         }
-                        index_concat_branch_6369 = index_concat_branch_6368;
+                        index_concat_branch_6506 = index_concat_branch_6505;
                     }
-                    index_concat_branch_6370 = index_concat_branch_6369;
+                    index_concat_branch_6507 = index_concat_branch_6506;
                 }
-                index_concat_branch_6371 = index_concat_branch_6370;
+                index_concat_branch_6508 = index_concat_branch_6507;
             }
             
-            int32_t u8_res_6167 = zext_i8_i32(index_concat_branch_6371);
-            int32_t y_6029 = mul32(256, u8_res_6167);
-            int32_t x_6030 = add32(y_6029, u8_res_6165);
-            int64_t new_index_6298 = (int64_t) 2 + new_index_6294;
-            int64_t new_index_6306 = new_index_6298 + binop_x_6301;
-            bool index_concat_cmp_6334 = sle64(index_concat_add_6374,
-                                               new_index_6306);
-            int8_t index_concat_branch_6350;
+            int32_t u8_res_6239 = zext_i8_i32(index_concat_branch_6508);
+            int32_t y_6240 = mul32(256, u8_res_6239);
+            int32_t x_6241 = add32(u8_res_6237, y_6240);
+            int64_t new_index_6435 = (int64_t) 2 + new_index_6431;
+            int64_t new_index_6443 = new_index_6435 + binop_x_6438;
+            bool index_concat_cmp_6471 = sle64(index_concat_add_6511,
+                                               new_index_6443);
+            int8_t index_concat_branch_6487;
             
-            if (index_concat_cmp_6334) {
-                index_concat_branch_6350 = (int8_t) 0;
+            if (index_concat_cmp_6471) {
+                index_concat_branch_6487 = (int8_t) 0;
             } else {
-                bool index_concat_cmp_6337 = sle64(conc_tmp_6134,
-                                                   new_index_6306);
-                int8_t index_concat_branch_6349;
+                bool index_concat_cmp_6474 = sle64(conc_tmp_6223,
+                                                   new_index_6443);
+                int8_t index_concat_branch_6486;
                 
-                if (index_concat_cmp_6337) {
-                    int64_t index_concat_i_6338 = sub64(new_index_6306,
-                                                        conc_tmp_6134);
-                    int8_t index_concat_6339;
+                if (index_concat_cmp_6474) {
+                    int64_t index_concat_i_6475 = sub64(new_index_6443,
+                                                        conc_tmp_6223);
+                    int8_t index_concat_6476;
                     
-                    index_concat_6339 =
-                        ((int8_t *) mem_6405)[index_concat_i_6338];
-                    index_concat_branch_6349 = index_concat_6339;
+                    index_concat_6476 =
+                        ((int8_t *) mem_6542)[index_concat_i_6475];
+                    index_concat_branch_6486 = index_concat_6476;
                 } else {
-                    bool index_concat_cmp_6340 = sle64(conc_tmp_6128,
-                                                       new_index_6306);
-                    int8_t index_concat_branch_6348;
+                    bool index_concat_cmp_6477 = sle64(conc_tmp_6222,
+                                                       new_index_6443);
+                    int8_t index_concat_branch_6485;
                     
-                    if (index_concat_cmp_6340) {
-                        index_concat_branch_6348 = (int8_t) 0;
+                    if (index_concat_cmp_6477) {
+                        index_concat_branch_6485 = (int8_t) 0;
                     } else {
-                        bool index_concat_cmp_6343 = sle64(n_5767,
-                                                           new_index_6306);
-                        int8_t index_concat_branch_6347;
+                        bool index_concat_cmp_6480 = sle64(n_6203,
+                                                           new_index_6443);
+                        int8_t index_concat_branch_6484;
                         
-                        if (index_concat_cmp_6343) {
-                            int64_t index_concat_i_6344 = sub64(new_index_6306,
-                                                                n_5767);
-                            int8_t index_concat_6345;
+                        if (index_concat_cmp_6480) {
+                            int64_t index_concat_i_6481 = sub64(new_index_6443,
+                                                                n_6203);
+                            int8_t index_concat_6482;
                             
-                            index_concat_6345 =
-                                ((int8_t *) mem_6407)[index_concat_i_6344];
-                            index_concat_branch_6347 = index_concat_6345;
+                            index_concat_6482 =
+                                ((int8_t *) mem_6544)[index_concat_i_6481];
+                            index_concat_branch_6484 = index_concat_6482;
                         } else {
-                            int8_t index_concat_6346;
+                            int8_t index_concat_6483;
                             
-                            index_concat_6346 =
-                                ((int8_t *) ms_mem_6403.mem)[new_index_6306];
-                            index_concat_branch_6347 = index_concat_6346;
+                            index_concat_6483 =
+                                ((int8_t *) ms_mem_6540.mem)[new_index_6443];
+                            index_concat_branch_6484 = index_concat_6483;
                         }
-                        index_concat_branch_6348 = index_concat_branch_6347;
+                        index_concat_branch_6485 = index_concat_branch_6484;
                     }
-                    index_concat_branch_6349 = index_concat_branch_6348;
+                    index_concat_branch_6486 = index_concat_branch_6485;
                 }
-                index_concat_branch_6350 = index_concat_branch_6349;
+                index_concat_branch_6487 = index_concat_branch_6486;
             }
             
-            int32_t u8_res_6169 = zext_i8_i32(index_concat_branch_6350);
-            int32_t y_6033 = mul32(65536, u8_res_6169);
-            int32_t x_6034 = add32(x_6030, y_6033);
-            int64_t new_index_6300 = (int64_t) 3 + new_index_6294;
-            int64_t new_index_6308 = new_index_6300 + binop_x_6301;
-            bool index_concat_cmp_6313 = sle64(index_concat_add_6374,
-                                               new_index_6308);
-            int8_t index_concat_branch_6329;
+            int32_t u8_res_6243 = zext_i8_i32(index_concat_branch_6487);
+            int32_t y_6244 = mul32(65536, u8_res_6243);
+            int32_t x_6245 = add32(x_6241, y_6244);
+            int64_t new_index_6437 = (int64_t) 3 + new_index_6431;
+            int64_t new_index_6445 = new_index_6437 + binop_x_6438;
+            bool index_concat_cmp_6450 = sle64(index_concat_add_6511,
+                                               new_index_6445);
+            int8_t index_concat_branch_6466;
             
-            if (index_concat_cmp_6313) {
-                index_concat_branch_6329 = (int8_t) 0;
+            if (index_concat_cmp_6450) {
+                index_concat_branch_6466 = (int8_t) 0;
             } else {
-                bool index_concat_cmp_6316 = sle64(conc_tmp_6134,
-                                                   new_index_6308);
-                int8_t index_concat_branch_6328;
+                bool index_concat_cmp_6453 = sle64(conc_tmp_6223,
+                                                   new_index_6445);
+                int8_t index_concat_branch_6465;
                 
-                if (index_concat_cmp_6316) {
-                    int64_t index_concat_i_6317 = sub64(new_index_6308,
-                                                        conc_tmp_6134);
-                    int8_t index_concat_6318;
+                if (index_concat_cmp_6453) {
+                    int64_t index_concat_i_6454 = sub64(new_index_6445,
+                                                        conc_tmp_6223);
+                    int8_t index_concat_6455;
                     
-                    index_concat_6318 =
-                        ((int8_t *) mem_6405)[index_concat_i_6317];
-                    index_concat_branch_6328 = index_concat_6318;
+                    index_concat_6455 =
+                        ((int8_t *) mem_6542)[index_concat_i_6454];
+                    index_concat_branch_6465 = index_concat_6455;
                 } else {
-                    bool index_concat_cmp_6319 = sle64(conc_tmp_6128,
-                                                       new_index_6308);
-                    int8_t index_concat_branch_6327;
+                    bool index_concat_cmp_6456 = sle64(conc_tmp_6222,
+                                                       new_index_6445);
+                    int8_t index_concat_branch_6464;
                     
-                    if (index_concat_cmp_6319) {
-                        index_concat_branch_6327 = (int8_t) 0;
+                    if (index_concat_cmp_6456) {
+                        index_concat_branch_6464 = (int8_t) 0;
                     } else {
-                        bool index_concat_cmp_6322 = sle64(n_5767,
-                                                           new_index_6308);
-                        int8_t index_concat_branch_6326;
+                        bool index_concat_cmp_6459 = sle64(n_6203,
+                                                           new_index_6445);
+                        int8_t index_concat_branch_6463;
                         
-                        if (index_concat_cmp_6322) {
-                            int64_t index_concat_i_6323 = sub64(new_index_6308,
-                                                                n_5767);
-                            int8_t index_concat_6324;
+                        if (index_concat_cmp_6459) {
+                            int64_t index_concat_i_6460 = sub64(new_index_6445,
+                                                                n_6203);
+                            int8_t index_concat_6461;
                             
-                            index_concat_6324 =
-                                ((int8_t *) mem_6407)[index_concat_i_6323];
-                            index_concat_branch_6326 = index_concat_6324;
+                            index_concat_6461 =
+                                ((int8_t *) mem_6544)[index_concat_i_6460];
+                            index_concat_branch_6463 = index_concat_6461;
                         } else {
-                            int8_t index_concat_6325;
+                            int8_t index_concat_6462;
                             
-                            index_concat_6325 =
-                                ((int8_t *) ms_mem_6403.mem)[new_index_6308];
-                            index_concat_branch_6326 = index_concat_6325;
+                            index_concat_6462 =
+                                ((int8_t *) ms_mem_6540.mem)[new_index_6445];
+                            index_concat_branch_6463 = index_concat_6462;
                         }
-                        index_concat_branch_6327 = index_concat_branch_6326;
+                        index_concat_branch_6464 = index_concat_branch_6463;
                     }
-                    index_concat_branch_6328 = index_concat_branch_6327;
+                    index_concat_branch_6465 = index_concat_branch_6464;
                 }
-                index_concat_branch_6329 = index_concat_branch_6328;
+                index_concat_branch_6466 = index_concat_branch_6465;
             }
             
-            int32_t u8_res_6171 = zext_i8_i32(index_concat_branch_6329);
-            int32_t y_6037 = mul32(16777216, u8_res_6171);
-            int32_t defunc_0_f_res_6038 = add32(x_6034, y_6037);
+            int32_t u8_res_6247 = zext_i8_i32(index_concat_branch_6466);
+            int32_t y_6248 = mul32(16777216, u8_res_6247);
+            int32_t defunc_0_f_res_6249 = add32(x_6245, y_6248);
             
-            ((int32_t *) mem_6411)[i_6286 * (int64_t) 16 + i_6282] =
-                defunc_0_f_res_6038;
+            ((int32_t *) mem_6548)[i_6423 * (int64_t) 16 + i_6419] =
+                defunc_0_f_res_6249;
         }
     }
     
-    int32_t md5_res_6039;
-    int32_t md5_res_6040;
-    int32_t md5_res_6041;
-    int32_t md5_res_6042;
-    int32_t a0_6044;
-    int32_t b0_6045;
-    int32_t c0_6046;
-    int32_t d0_6047;
+    int32_t md5_res_6250;
+    int32_t md5_res_6251;
+    int32_t md5_res_6252;
+    int32_t md5_res_6253;
+    int32_t a0_6255;
+    int32_t b0_6256;
+    int32_t c0_6257;
+    int32_t d0_6258;
     
-    a0_6044 = 1732584193;
-    b0_6045 = -271733879;
-    c0_6046 = -1732584194;
-    d0_6047 = 271733878;
-    for (int64_t i_6043 = 0; i_6043 < unflatten_arg_6018; i_6043++) {
-        int32_t md5_chunk_res_6048;
-        int32_t md5_chunk_res_6049;
-        int32_t md5_chunk_res_6050;
-        int32_t md5_chunk_res_6051;
-        int32_t a_6053;
-        int32_t b_6054;
-        int32_t c_6055;
-        int32_t d_6056;
+    a0_6255 = 1732584193;
+    b0_6256 = -271733879;
+    c0_6257 = -1732584194;
+    d0_6258 = 271733878;
+    for (int64_t i_6254 = 0; i_6254 < unflatten_arg_6226; i_6254++) {
+        int32_t md5_chunk_res_6259;
+        int32_t md5_chunk_res_6260;
+        int32_t md5_chunk_res_6261;
+        int32_t md5_chunk_res_6262;
+        int32_t a_6264;
+        int32_t b_6265;
+        int32_t c_6266;
+        int32_t d_6267;
         
-        a_6053 = a0_6044;
-        b_6054 = b0_6045;
-        c_6055 = c0_6046;
-        d_6056 = d0_6047;
-        for (int32_t i_6052 = 0; i_6052 < 64; i_6052++) {
-            bool cond_6057 = slt32(i_6052, 16);
-            int32_t loopres_6058;
-            int32_t loopres_6059;
+        a_6264 = a0_6255;
+        b_6265 = b0_6256;
+        c_6266 = c0_6257;
+        d_6267 = d0_6258;
+        for (int32_t i_6263 = 0; i_6263 < 64; i_6263++) {
+            bool cond_6268 = slt32(i_6263, 16);
+            int32_t loopres_6269;
+            int32_t loopres_6270;
             
-            if (cond_6057) {
-                int32_t x_6060 = b_6054 & c_6055;
-                int32_t x_6061 = ~b_6054;
-                int32_t y_6062 = d_6056 & x_6061;
-                int32_t loopres_t_res_6063 = x_6060 | y_6062;
+            if (cond_6268) {
+                int32_t x_6271 = b_6265 & c_6266;
+                int32_t x_6272 = ~b_6265;
+                int32_t y_6273 = d_6267 & x_6272;
+                int32_t loopres_t_res_6274 = x_6271 | y_6273;
                 
-                loopres_6058 = loopres_t_res_6063;
-                loopres_6059 = i_6052;
+                loopres_6269 = loopres_t_res_6274;
+                loopres_6270 = i_6263;
             } else {
-                bool cond_6257 = slt32(i_6052, 32);
-                int32_t loopres_f_res_6258;
-                int32_t loopres_f_res_6259;
+                bool cond_6394 = slt32(i_6263, 32);
+                int32_t loopres_f_res_6395;
+                int32_t loopres_f_res_6396;
                 
-                if (cond_6257) {
-                    int32_t x_6260 = b_6054 & d_6056;
-                    int32_t x_6261 = ~d_6056;
-                    int32_t y_6262 = c_6055 & x_6261;
-                    int32_t loopres_f_res_t_res_6263 = x_6260 | y_6262;
-                    int32_t x_6264 = mul32(5, i_6052);
-                    int32_t x_6265 = add32(1, x_6264);
-                    int32_t loopres_f_res_t_res_6266 = umod32(x_6265, 16);
+                if (cond_6394) {
+                    int32_t x_6397 = b_6265 & d_6267;
+                    int32_t x_6398 = ~d_6267;
+                    int32_t y_6399 = c_6266 & x_6398;
+                    int32_t loopres_f_res_t_res_6400 = x_6397 | y_6399;
+                    int32_t x_6401 = mul32(5, i_6263);
+                    int32_t x_6402 = add32(1, x_6401);
+                    int32_t loopres_f_res_t_res_6403 = umod32(x_6402, 16);
                     
-                    loopres_f_res_6258 = loopres_f_res_t_res_6263;
-                    loopres_f_res_6259 = loopres_f_res_t_res_6266;
+                    loopres_f_res_6395 = loopres_f_res_t_res_6400;
+                    loopres_f_res_6396 = loopres_f_res_t_res_6403;
                 } else {
-                    bool cond_6267 = slt32(i_6052, 48);
-                    int32_t loopres_f_res_f_res_6268;
-                    int32_t loopres_f_res_f_res_6269;
+                    bool cond_6404 = slt32(i_6263, 48);
+                    int32_t loopres_f_res_f_res_6405;
+                    int32_t loopres_f_res_f_res_6406;
                     
-                    if (cond_6267) {
-                        int32_t x_6270 = b_6054 ^ c_6055;
-                        int32_t loopres_f_res_f_res_t_res_6271 = d_6056 ^
-                                x_6270;
-                        int32_t x_6272 = mul32(3, i_6052);
-                        int32_t x_6273 = add32(5, x_6272);
-                        int32_t loopres_f_res_f_res_t_res_6274 = umod32(x_6273,
+                    if (cond_6404) {
+                        int32_t x_6407 = b_6265 ^ c_6266;
+                        int32_t loopres_f_res_f_res_t_res_6408 = d_6267 ^
+                                x_6407;
+                        int32_t x_6409 = mul32(3, i_6263);
+                        int32_t x_6410 = add32(5, x_6409);
+                        int32_t loopres_f_res_f_res_t_res_6411 = umod32(x_6410,
                                                                         16);
                         
-                        loopres_f_res_f_res_6268 =
-                            loopres_f_res_f_res_t_res_6271;
-                        loopres_f_res_f_res_6269 =
-                            loopres_f_res_f_res_t_res_6274;
+                        loopres_f_res_f_res_6405 =
+                            loopres_f_res_f_res_t_res_6408;
+                        loopres_f_res_f_res_6406 =
+                            loopres_f_res_f_res_t_res_6411;
                     } else {
-                        int32_t y_6275 = ~d_6056;
-                        int32_t y_6276 = b_6054 | y_6275;
-                        int32_t loopres_f_res_f_res_f_res_6277 = c_6055 ^
-                                y_6276;
-                        int32_t x_6278 = mul32(7, i_6052);
-                        int32_t loopres_f_res_f_res_f_res_6279 = umod32(x_6278,
+                        int32_t y_6412 = ~d_6267;
+                        int32_t y_6413 = b_6265 | y_6412;
+                        int32_t loopres_f_res_f_res_f_res_6414 = c_6266 ^
+                                y_6413;
+                        int32_t x_6415 = mul32(7, i_6263);
+                        int32_t loopres_f_res_f_res_f_res_6416 = umod32(x_6415,
                                                                         16);
                         
-                        loopres_f_res_f_res_6268 =
-                            loopres_f_res_f_res_f_res_6277;
-                        loopres_f_res_f_res_6269 =
-                            loopres_f_res_f_res_f_res_6279;
+                        loopres_f_res_f_res_6405 =
+                            loopres_f_res_f_res_f_res_6414;
+                        loopres_f_res_f_res_6406 =
+                            loopres_f_res_f_res_f_res_6416;
                     }
-                    loopres_f_res_6258 = loopres_f_res_f_res_6268;
-                    loopres_f_res_6259 = loopres_f_res_f_res_6269;
+                    loopres_f_res_6395 = loopres_f_res_f_res_6405;
+                    loopres_f_res_6396 = loopres_f_res_f_res_6406;
                 }
-                loopres_6058 = loopres_f_res_6258;
-                loopres_6059 = loopres_f_res_6259;
+                loopres_6269 = loopres_f_res_6395;
+                loopres_6270 = loopres_f_res_6396;
             }
             
-            int32_t x_6087 = add32(a_6053, loopres_6058);
-            int64_t i_6088 = sext_i32_i64(i_6052);
-            bool x_6089 = sle64((int64_t) 0, i_6088);
-            bool y_6090 = slt64(i_6088, (int64_t) 64);
-            bool bounds_check_6091 = x_6089 && y_6090;
-            bool index_certs_6092;
+            int32_t x_6298 = add32(a_6264, loopres_6269);
+            int64_t i_6299 = sext_i32_i64(i_6263);
+            bool x_6300 = sle64((int64_t) 0, i_6299);
+            bool y_6301 = slt64(i_6299, (int64_t) 64);
+            bool bounds_check_6302 = x_6300 && y_6301;
+            bool index_certs_6303;
             
-            if (!bounds_check_6091) {
+            if (!bounds_check_6302) {
                 ctx->error =
                     msgprintf("Error: %s%lld%s%lld%s\n\nBacktrace:\n%s",
-                              "Index [", (long long) i_6088,
+                              "Index [", (long long) i_6299,
                               "] out of bounds for array of shape [",
                               (long long) (int64_t) 64, "].",
                               "-> #0  sample_programs/md5.fut:68:36-40\n   #1  sample_programs/md5.fut:76:24-52\n   #2  sample_programs/md5.fut:87:19-82\n   #3  sample_programs/md5.fut:79:1-88:44\n");
@@ -5004,21 +5004,21 @@ static int futrts_entry_main(struct futhark_context *ctx,
                 goto cleanup;
             }
             
-            int32_t y_6093;
+            int32_t y_6304;
             
-            y_6093 = ((int32_t *) mem_6400.mem)[i_6088];
+            y_6304 = ((int32_t *) mem_6537.mem)[i_6299];
             
-            int32_t x_6094 = add32(x_6087, y_6093);
-            int64_t i_6095 = sext_i32_i64(loopres_6059);
-            bool x_6096 = sle64((int64_t) 0, i_6095);
-            bool y_6097 = slt64(i_6095, (int64_t) 16);
-            bool bounds_check_6098 = x_6096 && y_6097;
-            bool index_certs_6099;
+            int32_t x_6305 = add32(x_6298, y_6304);
+            int64_t i_6306 = sext_i32_i64(loopres_6270);
+            bool x_6307 = sle64((int64_t) 0, i_6306);
+            bool y_6308 = slt64(i_6306, (int64_t) 16);
+            bool bounds_check_6309 = x_6307 && y_6308;
+            bool index_certs_6310;
             
-            if (!bounds_check_6098) {
+            if (!bounds_check_6309) {
                 ctx->error =
                     msgprintf("Error: %s%lld%s%lld%s\n\nBacktrace:\n%s",
-                              "Index [", (long long) i_6095,
+                              "Index [", (long long) i_6306,
                               "] out of bounds for array of shape [",
                               (long long) (int64_t) 16, "].",
                               "-> #0  sample_programs/md5.fut:68:44-55\n   #1  sample_programs/md5.fut:76:24-52\n   #2  sample_programs/md5.fut:87:19-82\n   #3  sample_programs/md5.fut:79:1-88:44\n");
@@ -5026,121 +5026,121 @@ static int futrts_entry_main(struct futhark_context *ctx,
                 goto cleanup;
             }
             
-            int32_t y_6100;
+            int32_t y_6311;
             
-            y_6100 = ((int32_t *) mem_6411)[i_6043 * (int64_t) 16 + i_6095];
+            y_6311 = ((int32_t *) mem_6548)[i_6254 * (int64_t) 16 + i_6306];
             
-            int32_t rotate_left_arg_6101 = add32(x_6094, y_6100);
-            int32_t rotate_left_arg_6102;
+            int32_t rotate_left_arg_6312 = add32(x_6305, y_6311);
+            int32_t rotate_left_arg_6313;
             
-            rotate_left_arg_6102 = ((int32_t *) mem_6402.mem)[i_6088];
+            rotate_left_arg_6313 = ((int32_t *) mem_6539.mem)[i_6299];
             
-            int32_t x_6103 = shl32(rotate_left_arg_6101, rotate_left_arg_6102);
-            int32_t y_6104 = sub32(32, rotate_left_arg_6102);
-            int32_t y_6105 = lshr32(rotate_left_arg_6101, y_6104);
-            int32_t rotate_left_res_6106 = x_6103 | y_6105;
-            int32_t loopres_6107 = add32(b_6054, rotate_left_res_6106);
-            int32_t a_tmp_6495 = d_6056;
-            int32_t b_tmp_6496 = loopres_6107;
-            int32_t c_tmp_6497 = b_6054;
-            int32_t d_tmp_6498 = c_6055;
+            int32_t x_6314 = shl32(rotate_left_arg_6312, rotate_left_arg_6313);
+            int32_t y_6315 = sub32(32, rotate_left_arg_6313);
+            int32_t y_6316 = lshr32(rotate_left_arg_6312, y_6315);
+            int32_t rotate_left_res_6317 = x_6314 | y_6316;
+            int32_t loopres_6318 = add32(b_6265, rotate_left_res_6317);
+            int32_t a_tmp_6632 = d_6267;
+            int32_t b_tmp_6633 = loopres_6318;
+            int32_t c_tmp_6634 = b_6265;
+            int32_t d_tmp_6635 = c_6266;
             
-            a_6053 = a_tmp_6495;
-            b_6054 = b_tmp_6496;
-            c_6055 = c_tmp_6497;
-            d_6056 = d_tmp_6498;
+            a_6264 = a_tmp_6632;
+            b_6265 = b_tmp_6633;
+            c_6266 = c_tmp_6634;
+            d_6267 = d_tmp_6635;
         }
-        md5_chunk_res_6048 = a_6053;
-        md5_chunk_res_6049 = b_6054;
-        md5_chunk_res_6050 = c_6055;
-        md5_chunk_res_6051 = d_6056;
+        md5_chunk_res_6259 = a_6264;
+        md5_chunk_res_6260 = b_6265;
+        md5_chunk_res_6261 = c_6266;
+        md5_chunk_res_6262 = d_6267;
         
-        int32_t loopres_6108 = add32(a0_6044, md5_chunk_res_6048);
-        int32_t loopres_6109 = add32(b0_6045, md5_chunk_res_6049);
-        int32_t loopres_6110 = add32(c0_6046, md5_chunk_res_6050);
-        int32_t loopres_6111 = add32(d0_6047, md5_chunk_res_6051);
-        int32_t a0_tmp_6491 = loopres_6108;
-        int32_t b0_tmp_6492 = loopres_6109;
-        int32_t c0_tmp_6493 = loopres_6110;
-        int32_t d0_tmp_6494 = loopres_6111;
+        int32_t loopres_6319 = add32(a0_6255, md5_chunk_res_6259);
+        int32_t loopres_6320 = add32(b0_6256, md5_chunk_res_6260);
+        int32_t loopres_6321 = add32(c0_6257, md5_chunk_res_6261);
+        int32_t loopres_6322 = add32(d0_6258, md5_chunk_res_6262);
+        int32_t a0_tmp_6628 = loopres_6319;
+        int32_t b0_tmp_6629 = loopres_6320;
+        int32_t c0_tmp_6630 = loopres_6321;
+        int32_t d0_tmp_6631 = loopres_6322;
         
-        a0_6044 = a0_tmp_6491;
-        b0_6045 = b0_tmp_6492;
-        c0_6046 = c0_tmp_6493;
-        d0_6047 = d0_tmp_6494;
+        a0_6255 = a0_tmp_6628;
+        b0_6256 = b0_tmp_6629;
+        c0_6257 = c0_tmp_6630;
+        d0_6258 = d0_tmp_6631;
     }
-    md5_res_6039 = a0_6044;
-    md5_res_6040 = b0_6045;
-    md5_res_6041 = c0_6046;
-    md5_res_6042 = d0_6047;
-    if (mem_6456_cached_sizze_6508 < (int64_t) 16) {
-        err = lexical_realloc(&ctx->error, &mem_6456,
-                              &mem_6456_cached_sizze_6508, (int64_t) 16);
+    md5_res_6250 = a0_6255;
+    md5_res_6251 = b0_6256;
+    md5_res_6252 = c0_6257;
+    md5_res_6253 = d0_6258;
+    if (mem_6593_cached_sizze_6645 < (int64_t) 16) {
+        err = lexical_realloc(&ctx->error, &mem_6593,
+                              &mem_6593_cached_sizze_6645, (int64_t) 16);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
-    ((int32_t *) mem_6456)[(int64_t) 0] = md5_res_6039;
-    ((int32_t *) mem_6456)[(int64_t) 1] = md5_res_6040;
-    ((int32_t *) mem_6456)[(int64_t) 2] = md5_res_6041;
-    ((int32_t *) mem_6456)[(int64_t) 3] = md5_res_6042;
-    if (mem_6458_cached_sizze_6509 < (int64_t) 16) {
-        err = lexical_realloc(&ctx->error, &mem_6458,
-                              &mem_6458_cached_sizze_6509, (int64_t) 16);
+    ((int32_t *) mem_6593)[(int64_t) 0] = md5_res_6250;
+    ((int32_t *) mem_6593)[(int64_t) 1] = md5_res_6251;
+    ((int32_t *) mem_6593)[(int64_t) 2] = md5_res_6252;
+    ((int32_t *) mem_6593)[(int64_t) 3] = md5_res_6253;
+    if (mem_6595_cached_sizze_6646 < (int64_t) 16) {
+        err = lexical_realloc(&ctx->error, &mem_6595,
+                              &mem_6595_cached_sizze_6646, (int64_t) 16);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
-    if (mem_6475_cached_sizze_6510 < (int64_t) 4) {
-        err = lexical_realloc(&ctx->error, &mem_6475,
-                              &mem_6475_cached_sizze_6510, (int64_t) 4);
+    if (mem_6612_cached_sizze_6647 < (int64_t) 4) {
+        err = lexical_realloc(&ctx->error, &mem_6612,
+                              &mem_6612_cached_sizze_6647, (int64_t) 4);
         if (err != FUTHARK_SUCCESS)
             goto cleanup;
     }
-    for (int32_t i_6292 = 0; i_6292 < 4; i_6292++) {
-        int64_t i_6290 = sext_i32_i64(i_6292);
-        int32_t x_6114;
+    for (int32_t i_6429 = 0; i_6429 < 4; i_6429++) {
+        int64_t i_6427 = sext_i32_i64(i_6429);
+        int32_t x_6325;
         
-        x_6114 = ((int32_t *) mem_6456)[i_6290];
+        x_6325 = ((int32_t *) mem_6593)[i_6427];
         
-        int8_t u32_res_6173 = zext_i32_i8(x_6114);
-        int32_t u32_arg_6116 = udiv32(x_6114, 256);
-        int8_t u32_res_6175 = zext_i32_i8(u32_arg_6116);
-        int32_t u32_arg_6118 = udiv32(x_6114, 65536);
-        int8_t u32_res_6177 = zext_i32_i8(u32_arg_6118);
-        int32_t u32_arg_6120 = udiv32(x_6114, 16777216);
-        int8_t u32_res_6179 = zext_i32_i8(u32_arg_6120);
+        int8_t u32_res_6326 = zext_i32_i8(x_6325);
+        int32_t u32_arg_6327 = udiv32(x_6325, 256);
+        int8_t u32_res_6328 = zext_i32_i8(u32_arg_6327);
+        int32_t u32_arg_6329 = udiv32(x_6325, 65536);
+        int8_t u32_res_6330 = zext_i32_i8(u32_arg_6329);
+        int32_t u32_arg_6331 = udiv32(x_6325, 16777216);
+        int8_t u32_res_6332 = zext_i32_i8(u32_arg_6331);
         
-        ((int8_t *) mem_6475)[(int64_t) 0] = u32_res_6173;
-        ((int8_t *) mem_6475)[(int64_t) 1] = u32_res_6175;
-        ((int8_t *) mem_6475)[(int64_t) 2] = u32_res_6177;
-        ((int8_t *) mem_6475)[(int64_t) 3] = u32_res_6179;
+        ((int8_t *) mem_6612)[(int64_t) 0] = u32_res_6326;
+        ((int8_t *) mem_6612)[(int64_t) 1] = u32_res_6328;
+        ((int8_t *) mem_6612)[(int64_t) 2] = u32_res_6330;
+        ((int8_t *) mem_6612)[(int64_t) 3] = u32_res_6332;
         if ((int64_t) 4 > 0)
-            memmove(mem_6458 + i_6290 * (int64_t) 4, mem_6475 + (int64_t) 0,
+            memmove(mem_6595 + i_6427 * (int64_t) 4, mem_6612 + (int64_t) 0,
                     (int64_t) 4);
     }
-    if (memblock_alloc(ctx, &mem_6485, (int64_t) 16, "mem_6485")) {
+    if (memblock_alloc(ctx, &mem_6622, (int64_t) 16, "mem_6622")) {
         err = 1;
         goto cleanup;
     }
     if ((int64_t) 16 > 0)
-        memmove(mem_6485.mem + (int64_t) 0, mem_6458 + (int64_t) 0,
+        memmove(mem_6622.mem + (int64_t) 0, mem_6595 + (int64_t) 0,
                 (int64_t) 16);
-    if (memblock_set(ctx, &mem_out_6487, &mem_6485, "mem_6485") != 0)
+    if (memblock_set(ctx, &mem_out_6624, &mem_6622, "mem_6622") != 0)
         return 1;
-    (*mem_out_p_6504).references = NULL;
-    if (memblock_set(ctx, &*mem_out_p_6504, &mem_out_6487, "mem_out_6487") != 0)
+    (*mem_out_p_6641).references = NULL;
+    if (memblock_set(ctx, &*mem_out_p_6641, &mem_out_6624, "mem_out_6624") != 0)
         return 1;
     
   cleanup:
     {
-        free(mem_6405);
-        free(mem_6407);
-        free(mem_6411);
-        free(mem_6456);
-        free(mem_6458);
-        free(mem_6475);
-        if (memblock_unref(ctx, &mem_6485, "mem_6485") != 0)
+        free(mem_6542);
+        free(mem_6544);
+        free(mem_6548);
+        free(mem_6593);
+        free(mem_6595);
+        free(mem_6612);
+        if (memblock_unref(ctx, &mem_6622, "mem_6622") != 0)
             return 1;
-        if (memblock_unref(ctx, &mem_out_6487, "mem_out_6487") != 0)
+        if (memblock_unref(ctx, &mem_out_6624, "mem_out_6624") != 0)
             return 1;
     }
     return err;
@@ -5149,36 +5149,36 @@ static int futrts_entry_main(struct futhark_context *ctx,
 int futhark_entry_main(struct futhark_context *ctx, struct futhark_u8_1d **out0,
                        const struct futhark_u8_1d *in0)
 {
-    int64_t n_5767;
+    int64_t n_6203;
     int ret = 0;
     
     lock_lock(&ctx->lock);
     
-    struct memblock mem_out_6487;
+    struct memblock mem_out_6624;
     
-    mem_out_6487.references = NULL;
+    mem_out_6624.references = NULL;
     
-    struct memblock ms_mem_6403;
+    struct memblock ms_mem_6540;
     
-    ms_mem_6403.references = NULL;
-    ms_mem_6403 = in0->mem;
-    n_5767 = in0->shape[0];
-    if (!(n_5767 == in0->shape[0])) {
+    ms_mem_6540.references = NULL;
+    ms_mem_6540 = in0->mem;
+    n_6203 = in0->shape[0];
+    if (!(n_6203 == in0->shape[0])) {
         ret = 1;
         if (!ctx->error)
             ctx->error =
                 msgprintf("Error: entry point arguments have invalid sizes.\n");
     }
     if (ret == 0) {
-        ret = futrts_entry_main(ctx, &mem_out_6487, ms_mem_6403, n_5767);
+        ret = futrts_entry_main(ctx, &mem_out_6624, ms_mem_6540, n_6203);
         if (ret == 0) {
-            struct memblock mem_6400 = ctx->constants.mem_6400;
-            struct memblock mem_6402 = ctx->constants.mem_6402;
+            struct memblock mem_6537 = ctx->constants.mem_6537;
+            struct memblock mem_6539 = ctx->constants.mem_6539;
             
             assert((*out0 =
                     (struct futhark_u8_1d *) malloc(sizeof(struct futhark_u8_1d))) !=
                 NULL);
-            (*out0)->mem = mem_out_6487;
+            (*out0)->mem = mem_out_6624;
             (*out0)->shape[0] = (int64_t) 16;
         }
     }

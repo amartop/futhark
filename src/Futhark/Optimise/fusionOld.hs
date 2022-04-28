@@ -7,7 +7,7 @@
 -- /A T2 Graph-Reduction Approach To Fusion/ for the basic idea (some
 -- extensions discussed in /Design and GPGPU Performance of Futhark’s
 -- Redomap Construct/).
-module Futhark.Optimise.Fusion (fuseSOACs) where
+module Futhark.Optimise.FusionOld (fuseSOACs) where
 
 import Control.Monad.Except
 import Control.Monad.Reader

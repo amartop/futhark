@@ -84,7 +84,7 @@ dontFuseScans m = do
 
 -- | The pass definition.
 fuseSOACs :: Pass SOACS SOACS
-fuseSOACs =
+fuseSOACs = do
   Pass
     { passName = "Fuse SOACs",
       passDescription = "Perform higher-order optimisation, i.e., fusion.",

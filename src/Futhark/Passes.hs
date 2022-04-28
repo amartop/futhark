@@ -40,6 +40,8 @@ import Futhark.Pass.KernelBabysitting
 import Futhark.Pass.Simplify
 import Futhark.Pipeline
 
+import qualified Futhark.Optimise.FusionOld as F
+
 -- | A pipeline used by all current compilers.  Performs inlining,
 -- fusion, and various forms of cleanup.  This pipeline will be
 -- followed by another one that deals with parallelism and memory.
@@ -54,6 +56,7 @@ standardPipeline =
       performCSE True,
       simplifySOACS,
       -- We run fusion twice
+      F.fuseSOACs,
       fuseSOACs,
       performCSE True,
       simplifySOACS,

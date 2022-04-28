@@ -215,9 +215,10 @@ library
       Futhark.Optimise.CSE
       Futhark.Optimise.DoubleBuffer
       Futhark.Optimise.Fusion
+      Futhark.Optimise.FusionOld
       Futhark.Optimise.Fusion.Composing
       Futhark.Optimise.Fusion.LoopKernel
-	  Futhark.Optimise.GraphRep
+      Futhark.Optimise.GraphRep
       Futhark.Optimise.InPlaceLowering
       Futhark.Optimise.InPlaceLowering.LowerIntoStm
       Futhark.Optimise.InPlaceLowering.SubstituteIndices

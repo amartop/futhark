@@ -46,6 +46,7 @@ import Foreign (bitReverse32)
 import Futhark.MonadFreshNames (newName)
 import Debug.Trace (trace)
 import Data.Maybe (isJust, isNothing, mapMaybe)
+import Futhark.Analysis.HORep.SOAC (lambda)
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -336,6 +337,32 @@ isArray :: FParam SOACS -> Bool
 isArray p = case paramDec p of
   Array {} -> True
   _ -> False
+
+-- displayGraphFromfun ::  FunDef SOACS -> FusionEnvM String
+-- displayGraphFromfun fun = do
+--   g <- mkDepGraph stms resNames inputNames
+--   let str = pprg g
+--   strs <-  mapM displayGraphFromNode (nodes' g)
+--   return $ str ++ concat strs
+--   where
+--     stms = (stmsToList . bodyStms . funDefBody) fun
+--     resNames = namesFromRes ((bodyResult . funDefBody) fun)
+--     inputNames = map paramName $ filter isArray (funDefParams  fun)
+--     nodes' g' = mapMaybe (lab g') (nodes g')
+
+-- -- runInnerDisplay :: DepGraph -> String
+-- -- runInnerDisplay =
+
+
+-- displayGraphFromNode :: NodeT -> FusionEnvM String
+-- displayGraphFromNode n = case n of
+--   SoacNode soac _ _ -> do
+--     g <- mkDepGraph ((stmsToList . bodyStms . lambdaBody . lambda)soac) [] []
+--     return $ pprg g
+--   _ -> return ""
+
+
+
 
 mkDepGraph :: [Stm SOACS] -> [VName] -> [VName] -> FusionEnvM DepGraph
 mkDepGraph stms res inputs = do
