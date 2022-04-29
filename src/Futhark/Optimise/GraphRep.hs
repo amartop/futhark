@@ -453,8 +453,7 @@ addTransforms g =
           [n'] <- L.nub $ suc g n,
           vn `notElem` map (getName . edgeLabel) (filter (\(a,_,_) -> a/=n) (inn g n')),
           Just (SoacNode soac outps aux2) <- lab g n',
-          [trName] <- patNames pat,
-          all isRealNode (mapMaybe (lab g) (pre g n))
+          [trName] <- patNames pat
         -> do
           let sucNodes = pre g n
           let edgs = inn g n
@@ -462,11 +461,10 @@ addTransforms g =
           let outps' = map (\inp -> if H.inputArray inp /= vn
                                     then inp
                                     else H.addTransform transform inp)  outps
-          g'' <- applyAugs [substituteNamesInNodes (makeMap [trName] [vn]) sucNodes,
-                            substituteNamesInEdges (makeMap [trName] [vn]) edgs
-                           ] g'
-          let ctx = mergedContext (SoacNode soac outps' (aux <> aux2)) (context g'' n') (context g'' n)
-          contractEdge n ctx g''
+          let mapping = makeMap [vn] [trName]
+          let newNode = substituteNames mapping (SoacNode soac outps' (aux <> aux2))
+          let ctx = mergedContext newNode (context g' n') (context g' n)
+          contractEdge n ctx g'
       _ -> pure g
 -- the context part could be nicer
 
