@@ -12,6 +12,9 @@ module Futhark.Optimise.Fusion.LoopKernel
     attemptFusion,
     SOAC,
     MapNest,
+    tryFusion,
+    pullRearrange,
+    pushRearrange
   )
 where
 

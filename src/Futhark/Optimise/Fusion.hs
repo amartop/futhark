@@ -37,7 +37,7 @@ import Debug.Trace
 --import Futhark.IR.Aliases (VName(VName))
 --import Futhark.Optimise.Fusion.LoopKernel (FusedKer(fusedVars))
 --import Data.Tuple (swap)
---import Data.List (deleteFirstsBy)
+import qualified Data.List as L
 --import Data.FileEmbed (bsToExp)
 --import GHC.TopHandler (runNonIO)
 --import qualified Futhark.Util as L
@@ -48,6 +48,7 @@ import Futhark.IR.SOACS.SOAC (SOAC(Screma))
 -- import Futhark.Transform.Rename (renameLambda)
 import Futhark.Analysis.HORep.SOAC
 import Data.DList (apply)
+import Futhark.Optimise.Fusion.LoopKernel (pullRearrange, tryFusion, pushRearrange, setInputs)
 
 
 -- unofficial TODO
@@ -211,7 +212,7 @@ isInf (_,_,e) = case e of
   InfDep _ -> True
   Cons _ -> False -- you would think this sholud be true - but mabye this works
   Fake _ -> True -- this is infusible to avoid simultaneous cons/dep edges
-  TrDep _ -> True
+  TrDep _ -> False -- lets try this
   _ -> False
 
 isCons :: EdgeT -> Bool
@@ -294,41 +295,72 @@ tryFuseNodesInGraph node_1 node_2 g
       if b then do
         fres <- fuseContexts edgs infusable_nodes (context g node_1) (context g node_2)
         case fres of
-          Just newcxt@(inputs, _, nodeT, outputs) ->
-            if null fusedC then contractEdge node_2 newcxt g
-            else do
-              new_node <- makeCopies nodeT
-              contractEdge node_2 (inputs, node_1, new_node, outputs) g
+          Just newcxt@(inputs, _, nodeT, outputs) -> do
+            nodeT' <- if null fusedC
+              then pure nodeT
+              else makeCopies nodeT
+            g' <- contractEdge node_2 (inputs, node_1, nodeT', outputs) g
+            if null trEdgs
+              then pure g'
+              else pure g'-- updateTrs node_1 g'
+
+                -- pure (inputs, outputs)
+
+
           Nothing -> pure g
       else pure g
     where
       edgs = map edgeLabel $ edgesBetween g node_1 node_2
       -- sorry about this
       fusedC = map getName $ filter isCons edgs
+      trEdgs = map getName $ filter isTrDep edgs
       infusable_nodes = map depsFromEdge
         (concatMap (edgesBetween g node_1) (filter (/=node_2) $ pre g node_1))
-                                  -- L.\\ edges_between g node_1 node_2)
 
+            -- if null fusedC then contractEdge node_2 newcxt g
+            -- else do
+            --   new_node <- makeCopies nodeT
+            --   contractEdge node_2 (inputs, node_1, new_node, outputs) g
 
--- insertAndCopy :: DepContext -> DepGraphAug
--- insertAndCopy (inputs, node, SNode stm, outputs) g =
---   do
---     new_stm <- trace "I get here!!!\n" $ makeCopies stm
---     let new_g = (&) (inputs, node, SNode new_stm, outputs) g
---     -- genEdges [(node, SNode new_stm)] (\x -> zip newly_fused $ map Cons newly_fused)  new_g
---     pure new_g
---   where
---     newly_fused = namesToList . consumedInStm . Alias.analyseStm mempty $ stm
--- insertAndCopy c g = pure $ (&) c g
+-- problems : output transforms are individual,
 
+-- In theory, the transforms are known - one could remove them
 
--- tal -> (x -> (x, tal))
+-- focus on exactly 1->1 nodes first?
 
--- (x -> (x, tal)) -> (tal -> (x -> (x, tal))) -> (x -> (x, tal))
+-- updateTrs :: Node -> DepGraphAug
+-- updateTrs n1 g =
+--   (context g n1
+--   -- for each edge, check if there is a tr
 
 
 
--- (tal, x) -> (tal, x)
+-- if the Ts are output-transforms, they should be
+pullRearrangeNodeT :: H.ArrayTransforms -> NodeT -> FusionEnvM (Maybe NodeT)
+pullRearrangeNodeT ts nodeT = case nodeT of
+  SoacNode soac outputs aux -> do
+    scope <- askScope
+    -- very important: tryFusion does not actually do any fusion - its just a monad-runner
+    maybeSoac <- tryFusion (pullRearrange soac ts) scope
+    case maybeSoac of
+      Just (s2, ts) -> pure $ Just $ SoacNode s2 (map (H.addInitialTransforms ts) outputs) aux
+      _ -> pure Nothing
+  _ -> pure Nothing
+
+pushRearrangeNodeT :: H.ArrayTransforms -> NodeT -> FusionEnvM (Maybe NodeT)
+pushRearrangeNodeT trs nodeT = case nodeT of
+  SoacNode soac outputs aux -> do
+    scope <- askScope
+    -- BUG only 1-1 fusion
+    let soac' = H.setInputs (map (H.setInputTransforms trs) (H.inputs soac)) soac
+    maybeSoac <- tryFusion (pushRearrange (map H.inputArray (H.inputs soac)) soac' noTransforms) scope
+    case maybeSoac of
+      Just (s2, ts) -> pure $ Just $ SoacNode s2 (map (H.addTransforms ts) outputs) aux
+      _ -> pure Nothing
+  _ -> pure Nothing
+
+
+
 
 makeCopies :: NodeT -> FusionEnvM NodeT
 makeCopies (SoacNode soac pats aux) =
@@ -401,19 +433,58 @@ fuseContexts edgs infusable
 
 
 
+-- findTransFormFrom :: VName
+
+
+findTransformsBetween :: VName -> NodeT -> NodeT -> H.ArrayTransforms
+findTransformsBetween is n1 n2 =
+  case (n1, n2) of
+    (SoacNode _ outTs _,
+     SoacNode s _ _)
+     | inTs <- H.inputs s ->
+       let outTs' = L.filter filterFun outTs in
+       let inTs' = L.filter filterFun inTs in
+       case (outTs', inTs') of
+         ([outT], [inT]) -> uncurry (<>) $ mapT H.inputTransforms (outT,inT)
+         _ -> trace (ppr inTs') $ error "could not find unique input/output pair between nodes"
+     where
+       filterFun (H.Input _ n2 _) = is == n2
+    _ -> undefined -- i guess only the soac node outputs
+    -- I should make initial and final transform functions and combine results
+
+
 fuseNodeT :: [EdgeT] -> [VName] ->  (NodeT, [EdgeT]) -> (NodeT, [EdgeT]) -> FusionEnvM (Maybe NodeT)
 -- fuseNodeT edgs infusible (s1, e1s) (s2, e2s)
---   | ns <- map getName $ filter isTrDep $ map edgeLabel $ edgs,
---     (not . null) transformNames
+--   | null infuslibe,
+--     ns <- map getName $ filter isTrDep $ map edgeLabel $ edgs,
+--     (not . null) transformNames ->
+
 fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
   case (s1, s2) of
-    -- requirements for this type of fusion should be really tough
     ( _,
       IfNode stm2 dfused) | isRealNode s1, null infusible
         -> pure $ Just $ IfNode stm2 $ (s1, e1s) : dfused
     -- ( _,
     --   DoNode stm2 dfused) | isRealNode s1, null infusible
     --     -> pure $ Just $ DoNode stm2 $ (s1, e1s) : dfused
+    -- requirements for this type of fusion should be really tough
+    ( SoacNode {}, SoacNode {})
+      | null infusible,
+        -- null e2s
+         [_] <- L.nub $ map getName edgs,
+         [ns] <- map getName $ filter isTrDep edgs -> do
+        -- (not . null) ns -> -- in case there are multiple identical transforms
+          let ts = findTransformsBetween ns s1 s2
+          let edgs' = filter ((/=) ns . getName) edgs
+          newS1m <- pullRearrangeNodeT ts s1
+          case newS1m of
+            Just newS1 -> fuseNodeT edgs' infusible (newS1, e1s) (s2, e2s)
+            _ -> do
+              newS2m <- pushRearrangeNodeT ts s2
+              case newS2m of
+                Just newS2 ->fuseNodeT edgs' infusible (s1, e1s) (newS2, e2s)
+                _ -> pure Nothing
+
     ( SoacNode soac1 pats1 aux1,
       SoacNode soac2 pats2 aux2) ->
         let (o1, o2) = mapT (map H.inputArray) (pats1, pats2) in
@@ -629,11 +700,6 @@ vFuseLambdas infusible lam_1 i1 o1 lam_2 i2 o2 = (lam , fused_inputs)
       })
 
 
-
-
-
-fuseMaps :: Ord b => M.Map a b -> M.Map b c -> M.Map a c
-fuseMaps m1 m2 = M.mapMaybe (`M.lookup` m2 ) m1
 
 
 changeAll :: Ord b => [b] -> [a] -> [b] -> [a]

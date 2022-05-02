@@ -47,6 +47,7 @@ import Futhark.MonadFreshNames (newName)
 import Debug.Trace (trace)
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import Futhark.Analysis.HORep.SOAC (lambda)
+import System.Posix.Internals (puts)
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -112,6 +113,9 @@ inputFromPat = map H.identInput . patIdents
 
 makeMap :: Ord a => [a] -> [b] -> M.Map a b
 makeMap x y = M.fromList $ zip x y
+
+fuseMaps :: Ord b => M.Map a b -> M.Map b c -> M.Map a c
+fuseMaps m1 m2 = M.mapMaybe (`M.lookup` m2 ) m1
 
 instance Substitute EdgeT where
   substituteNames m edgeT =
@@ -392,6 +396,16 @@ makeMapping g = do
       gen_dep_list :: DepNode -> [(VName, Node)]
       gen_dep_list (i, node) = [(name, i) | name <- getOutputs node]
 
+
+makeEdges :: [EdgeT] -> FusionEnvM [(Node, EdgeT)]
+makeEdges edgs = do
+  mapping <- gets producerMapping
+  pure $ map (makeEdge mapping) edgs
+  where
+    makeEdge mp e =
+      let node = mp M.! getName e in (node, e)
+
+
 -- creates deps for the given nodes on the graph using the edgeGenerator
 genEdges :: [DepNode] -> EdgeGenerator -> DepGraphAug
 genEdges l_stms edge_fun g = do
@@ -437,8 +451,6 @@ mapAcrossNodeTs f = mapAcross f'
 -- mapAcrossWithSE f g =
 --   applyAugs (map (f . contextFromNode) (nodes g))
 
-inputTransforms :: H.Input -> H.ArrayTransforms
-inputTransforms (H.Input ts _ _) = ts
 
 
 addTransforms :: DepGraphAug
@@ -457,7 +469,7 @@ addTransforms g =
         -> do
           let sucNodes = pre g n
           let edgs = inn g n
-          g' <- depGraphInsertEdges (map (\nd -> (nd, n', TrDep vn)) sucNodes) g
+          g' <- depGraphInsertEdges (map (\nd -> (nd, n', TrDep trName)) sucNodes) g
           let outps' = map (\inp -> if H.inputArray inp /= vn
                                     then inp
                                     else H.addTransform transform inp)  outps
@@ -627,6 +639,10 @@ mergedContext mergedlabel (inp1, n1, _, out1) (inp2, n2, _, out2) =
 contractEdge :: Node -> DepContext -> DepGraphAug
 contractEdge n2 cxt g = do
   let n1 = node' cxt
+
+  mapping <- gets producerMapping
+  let newMapping = fuseMaps mapping (makeMap [n2] [n1])
+
 
   -- -- Modify reachabilityG
   -- rg <- gets reachabilityG

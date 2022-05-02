@@ -41,11 +41,14 @@ module Futhark.Analysis.HORep.SOAC
     -- * SOAC inputs
     Input (..),
     varInput,
+    inputTransforms,
     identInput,
     isVarInput,
     isVarishInput,
     addTransform,
+    setInputTransforms,
     addInitialTransforms,
+    addTransforms,
     inputArray,
     inputRank,
     inputType,
@@ -288,6 +291,11 @@ addTransform tr (Input trs a t) =
 addInitialTransforms :: ArrayTransforms -> Input -> Input
 addInitialTransforms ts (Input ots a t) = Input (ts <> ots) a t
 
+addTransforms :: ArrayTransforms -> Input -> Input
+addTransforms ts (Input ots a t) = Input (ots <> ts) a t
+
+
+
 -- | Convert SOAC inputs to the corresponding expressions.
 inputsToSubExps ::
   (MonadBuilder m) =>
@@ -319,6 +327,12 @@ inputsToSubExps = mapM inputToExp'
 -- | Return the array name of the input.
 inputArray :: Input -> VName
 inputArray (Input _ v _) = v
+
+inputTransforms :: Input -> ArrayTransforms
+inputTransforms (Input ts _ _) = ts
+
+setInputTransforms :: ArrayTransforms -> Input -> Input
+setInputTransforms ts (Input _ vName typ) = Input ts vName typ
 
 -- | Return the type of an input.
 inputType :: Input -> Type
