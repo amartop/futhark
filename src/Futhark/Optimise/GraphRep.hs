@@ -26,6 +26,7 @@ import qualified Futhark.IR.SOACS as Futhark
 import qualified Futhark.Analysis.Alias as Alias
 import Futhark.IR.Prop.Aliases
 import qualified Futhark.Analysis.HORep.SOAC as H
+import qualified Futhark.Optimise.Fusion.LoopKernel as LK
 
 --import qualified Data.Graph.Inductive.Query.DFS as Q
 import qualified Data.Graph.Inductive.Tree as G
@@ -48,6 +49,7 @@ import Debug.Trace (trace)
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import Futhark.Analysis.HORep.SOAC (lambda)
 import System.Posix.Internals (puts)
+import qualified Futhark.Optimise.GraphRep as LK
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -384,7 +386,22 @@ addDepEdges = applyAugs
   addResEdges,
   addAliases,--, appendTransformations
   convertGraph, -- this one must be done last
-  keepTrying addTransforms]
+  keepTrying addTransforms,
+  iswim]
+
+iswim :: DepGraphAug
+iswim g = mapAcrossWithSE f
+  where
+    f (n, lab) = 
+      case lab of
+        SoacNode soac ots aux -> do
+          scope <- askScope 
+          maybeISWIM <- LK.tryFusion (LK.iswim Nothing soac H.noTransforms) scope 
+          case maybeISWIM of
+            Just (newSOAC, newts) -> 
+              updateNode n (const (Just $ SoacNode newSOAC (map (H.addInitialTransforms newts) ots) aux)) g
+              updateTr
+            Nothing -> pure g
 
 
 makeMapping :: DepGraphAug
@@ -450,7 +467,9 @@ mapAcrossNodeTs f = mapAcross f'
 -- mapAcrossWithSE :: (DepContext -> DepGraphAug) -> DepGraphAug
 -- mapAcrossWithSE f g =
 --   applyAugs (map (f . contextFromNode) (nodes g))
-
+mapAcrossWithSE :: (DepNode -> DepGraphAug) -> DepGraphAug
+mapAcrossWithSE f g =
+  applyAugs (map f (labNodes g)) g
 
 
 addTransforms :: DepGraphAug
