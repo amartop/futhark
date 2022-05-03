@@ -441,19 +441,23 @@ findTransformsBetween vname n1 n2 =
   outs <> ins
 
 iswim :: DepGraphAug
-iswim = mapAcrossWithSE f 
+iswim = mapAcrossWithSE f
   where
-    f (n, lab) g = 
+    f (n, lab) g =
       case lab of
         SoacNode soac ots aux -> do
-          scope <- askScope 
-          maybeISWIM <- LK.tryFusion (LK.iswim Nothing soac H.noTransforms) scope 
-          case maybeISWIM of
-            Just (newSOAC, newts) -> 
-              updateNode n (const (Just $ SoacNode newSOAC (map (H.addTransforms newts) ots) aux)) g 
-                >>= updateTrEdges n 
+          scope <- askScope
+          maybeISWIM <- LK.tryFusion (LK.iswim Nothing soac H.noTransforms) scope
+          case  maybeISWIM of
+            Just (newSOAC, newts) ->
+              trace (show $ H.width newSOAC) $
+              updateNode n (const (Just $ SoacNode newSOAC (map (internalizeOutput . H.addTransforms newts) ots) aux)) g
+                >>= updateTrEdges n
             Nothing -> pure g
         _ -> pure g
+
+internalizeOutput :: H.Input -> H.Input
+internalizeOutput i@(H.Input ts name tp) = H.Input ts name (H.inputType i)
 
 
 makeMapping :: DepGraphAug
@@ -596,7 +600,7 @@ nodeToSoacNode n@(StmNode s@(Let pats aux op)) = case op of
   -- add if, loops, (maybe transformations)
   DoLoop {} -> -- loop-node
     pure $ DoNode s []
-  If {} -> 
+  If {} ->
     pure $ IfNode s []
   _ -> pure n
 nodeToSoacNode n = pure n
@@ -884,7 +888,10 @@ genOutTransformStms inps = do
   pure (makeMap names newNames, substituteNames (makeMap namesToRep names) stms)
 
 inputToIdent :: H.Input -> Ident
-inputToIdent (H.Input _ vn tp) = Ident vn tp
+inputToIdent i@(H.Input _ vn tp) = Ident vn tp
+
+-- inputToIdent2 :: H.Input -> Ident
+-- inputToIdent2 i@(H.Input _ vn tp) = Ident vn (H.inputType i)
 
 finalizeNode :: NodeT -> FusionEnvM [Stm SOACS]
 finalizeNode nt = case nt of
