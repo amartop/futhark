@@ -202,8 +202,6 @@ tryFuseAll nodes_list = applyAugs (map (uncurry tryFuseNodesInGraph2) pairs)
 
 isDep :: EdgeT -> Bool
 isDep (Dep _) = True
-isDep (InfDep _) = True
-isDep (Res _) = True -- unintuitive, but i think it works
 isDep (ScanRed _) = True
 isDep _ = False
 
@@ -302,7 +300,7 @@ tryFuseNodesInGraph node_1 node_2 g
             g' <- contractEdge node_2 (inputs, node_1, nodeT', outputs) g
             if null trEdgs
               then pure g'
-              else pure g'-- updateTrs node_1 g'
+              else updateTrEdges node_1 g'-- updateTrs node_1 g'
 
                 -- pure (inputs, outputs)
 
@@ -328,10 +326,31 @@ tryFuseNodesInGraph node_1 node_2 g
 
 -- focus on exactly 1->1 nodes first?
 
--- updateTrs :: Node -> DepGraphAug
--- updateTrs n1 g =
---   (context g n1
---   -- for each edge, check if there is a tr
+updateTrEdges :: Node -> DepGraphAug
+updateTrEdges n1 g = do
+  let (inc, _, nt, otg) = context g n1
+  let relevantInc = relNodes inc
+  let relevantOtg = relNodes otg
+  let augs = map ( updateTrEdgesBetween  n1) relevantInc <>
+             map (`updateTrEdgesBetween` n1) relevantOtg
+  applyAugs augs g
+  where
+    relNodes :: Adj EdgeT ->[Node]
+    relNodes adjs = map snd $ filter (isDep . fst) adjs
+
+updateTrEdgesBetween :: Node -> Node -> DepGraphAug
+updateTrEdgesBetween n1 n2 g = do
+    let ns = map (getName . edgeLabel) $ filter (isDep . edgeLabel) $ edgesBetween g n1 n2
+    let edgs = mapMaybe insEdge ns
+    pure $ insEdges edgs g
+    where
+      (nt1, nt2) = mapT (lab' . context g) (n1, n2)
+      insEdge :: VName -> Maybe DepEdge
+      insEdge name =
+        if nullTransforms $ findTransformsBetween name nt1 nt2
+        then Nothing
+        else Just (n2, n1, TrDep name)
+
 
 
 
@@ -434,23 +453,31 @@ fuseContexts edgs infusable
 
 
 -- findTransFormFrom :: VName
+transformsFromInputs :: VName -> [H.Input] -> H.ArrayTransforms
+transformsFromInputs name1 is = case L.filter filterFun is of
+  [] -> error "missing input from list"
+  [x]-> H.inputTransforms x
+  xs | [ts] <- L.nub (map H.inputTransforms xs) -> ts
+  _ -> error "variable with differeing transformations"
+  where
+    filterFun (H.Input _ name2 _) = name1 == name2
+
+nodeInputTransforms  :: VName -> NodeT -> H.ArrayTransforms
+nodeInputTransforms  vname nodeT = case nodeT of
+  SoacNode soac _ _ -> transformsFromInputs vname (H.inputs soac)
+  _ -> H.noTransforms
+
+nodeOutputTransforms :: VName -> NodeT -> H.ArrayTransforms
+nodeOutputTransforms vname nodeT = case nodeT of
+  SoacNode _ outs _ -> transformsFromInputs vname outs
+  _ -> H.noTransforms
 
 
 findTransformsBetween :: VName -> NodeT -> NodeT -> H.ArrayTransforms
-findTransformsBetween is n1 n2 =
-  case (n1, n2) of
-    (SoacNode _ outTs _,
-     SoacNode s _ _)
-     | inTs <- H.inputs s ->
-       let outTs' = L.filter filterFun outTs in
-       let inTs' = L.filter filterFun inTs in
-       case (outTs', inTs') of
-         ([outT], [inT]) -> uncurry (<>) $ mapT H.inputTransforms (outT,inT)
-         _ -> trace (ppr inTs') $ error "could not find unique input/output pair between nodes"
-     where
-       filterFun (H.Input _ n2 _) = is == n2
-    _ -> undefined -- i guess only the soac node outputs
-    -- I should make initial and final transform functions and combine results
+findTransformsBetween vname n1 n2 =
+  let outs = nodeOutputTransforms vname n1 in
+  let ins  = nodeInputTransforms  vname n2 in
+  outs <> ins
 
 
 fuseNodeT :: [EdgeT] -> [VName] ->  (NodeT, [EdgeT]) -> (NodeT, [EdgeT]) -> FusionEnvM (Maybe NodeT)
@@ -471,7 +498,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
     ( SoacNode {}, SoacNode {})
       | null infusible,
         -- null e2s
-         [_] <- L.nub $ map getName edgs,
+         [_] <- L.nub $ map getName edgs, -- no clue why this works like this BUG!!!
          [ns] <- map getName $ filter isTrDep edgs -> do
         -- (not . null) ns -> -- in case there are multiple identical transforms
           let ts = findTransformsBetween ns s1 s2
