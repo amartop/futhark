@@ -49,7 +49,6 @@ import Debug.Trace (trace)
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import Futhark.Analysis.HORep.SOAC (lambda)
 import System.Posix.Internals (puts)
-import qualified Futhark.Optimise.GraphRep as LK
 -- import qualified Futhark.Analysis.HORep.MapNest as HM
 
 
@@ -389,19 +388,72 @@ addDepEdges = applyAugs
   keepTrying addTransforms,
   iswim]
 
-iswim :: DepGraphAug
-iswim g = mapAcrossWithSE f
+updateTrEdges :: Node -> DepGraphAug
+updateTrEdges n1 g = do
+  let (inc, _, nt, otg) = context g n1
+  let relevantInc = relNodes inc
+  let relevantOtg = relNodes otg
+  let augs = map ( updateTrEdgesBetween  n1) relevantInc <>
+             map (`updateTrEdgesBetween` n1) relevantOtg
+  applyAugs augs g
   where
-    f (n, lab) = 
+    relNodes :: Adj EdgeT ->[Node]
+    relNodes adjs = map snd $ filter (isDep . fst) adjs
+
+updateTrEdgesBetween :: Node -> Node -> DepGraphAug
+updateTrEdgesBetween n1 n2 g = do
+    let ns = map (getName . edgeLabel) $ filter (isDep . edgeLabel) $ edgesBetween g n1 n2
+    let edgs = mapMaybe insEdge ns
+    depGraphInsertEdges edgs =<< delLEdges edgs g
+    where
+      (nt1, nt2) = mapT (lab' . context g) (n1, n2)
+      insEdge :: VName -> Maybe DepEdge
+      insEdge name =
+        if H.nullTransforms $ findTransformsBetween name nt1 nt2
+        then Nothing
+        else Just (n2, n1, TrDep name)
+
+-- findTransFormFrom :: VName
+transformsFromInputs :: VName -> [H.Input] -> H.ArrayTransforms
+transformsFromInputs name1 is = case L.filter filterFun is of
+  [] -> error "missing input from list"
+  [x]-> H.inputTransforms x
+  xs | [ts] <- L.nub (map H.inputTransforms xs) -> ts
+  _ -> error "variable with differeing transformations"
+  where
+    filterFun (H.Input _ name2 _) = name1 == name2
+
+nodeInputTransforms  :: VName -> NodeT -> H.ArrayTransforms
+nodeInputTransforms  vname nodeT = case nodeT of
+  SoacNode soac _ _ -> transformsFromInputs vname (H.inputs soac)
+  _ -> H.noTransforms
+
+nodeOutputTransforms :: VName -> NodeT -> H.ArrayTransforms
+nodeOutputTransforms vname nodeT = case nodeT of
+  SoacNode _ outs _ -> transformsFromInputs vname outs
+  _ -> H.noTransforms
+
+
+findTransformsBetween :: VName -> NodeT -> NodeT -> H.ArrayTransforms
+findTransformsBetween vname n1 n2 =
+  let outs = nodeOutputTransforms vname n1 in
+  let ins  = nodeInputTransforms  vname n2 in
+  outs <> ins
+
+iswim :: DepGraphAug
+iswim = mapAcrossWithSE f 
+  where
+    f (n, lab) g = 
       case lab of
         SoacNode soac ots aux -> do
           scope <- askScope 
           maybeISWIM <- LK.tryFusion (LK.iswim Nothing soac H.noTransforms) scope 
           case maybeISWIM of
             Just (newSOAC, newts) -> 
-              updateNode n (const (Just $ SoacNode newSOAC (map (H.addInitialTransforms newts) ots) aux)) g
-              updateTr
+              updateNode n (const (Just $ SoacNode newSOAC (map (H.addTransforms newts) ots) aux)) g 
+                >>= updateTrEdges n 
             Nothing -> pure g
+        _ -> pure g
 
 
 makeMapping :: DepGraphAug
@@ -434,6 +486,9 @@ genEdges l_stms edge_fun g = do
     gen_edge name_map (from, node) = [toLEdge (from,to) edgeT  | (dep, edgeT) <- edge_fun node,
                                               Just to <- [M.lookup dep name_map]]
 
+delLEdges :: [DepEdge] -> DepGraphAug
+delLEdges edgs g = pure $ foldl (flip ($)) g (map delLEdge edgs)
+
 depGraphInsertEdges :: [DepEdge] -> DepGraphAug
 depGraphInsertEdges edgs g = return $ insEdges edgs g
 
@@ -464,12 +519,10 @@ mapAcrossNodeTs f = mapAcross f'
         return (ins, n, nodeT', outs)
 
 
--- mapAcrossWithSE :: (DepContext -> DepGraphAug) -> DepGraphAug
--- mapAcrossWithSE f g =
---   applyAugs (map (f . contextFromNode) (nodes g))
 mapAcrossWithSE :: (DepNode -> DepGraphAug) -> DepGraphAug
 mapAcrossWithSE f g =
   applyAugs (map f (labNodes g)) g
+
 
 
 addTransforms :: DepGraphAug
@@ -543,7 +596,7 @@ nodeToSoacNode n@(StmNode s@(Let pats aux op)) = case op of
   -- add if, loops, (maybe transformations)
   DoLoop {} -> -- loop-node
     pure $ DoNode s []
-  If {} -> do
+  If {} -> 
     pure $ IfNode s []
   _ -> pure n
 nodeToSoacNode n = pure n
@@ -856,3 +909,36 @@ finalizeNode nt = case nt of
 
 
 -- any (isNothing . isVarInput) outputs
+
+
+-- contextFromLNode :: DepGraph -> DepNode -> DepContext
+-- contextFromLNode g lnode = context g $ nodeFromLNode lnode
+
+-- isRes :: (Node, EdgeT) -> Bool
+-- isRes (_, Res _) = True
+-- isRes _ = False
+
+isDep :: EdgeT -> Bool
+isDep (Dep _) = True
+isDep (ScanRed _) = True
+isDep _ = False
+
+isInf :: (Node, Node, EdgeT) -> Bool
+isInf (_,_,e) = case e of
+  InfDep _ -> True
+  Cons _ -> False -- you would think this sholud be true - but mabye this works
+  Fake _ -> True -- this is infusible to avoid simultaneous cons/dep edges
+  TrDep _ -> False -- lets try this
+  _ -> False
+
+isCons :: EdgeT -> Bool
+isCons (Cons _) = True
+isCons _ = False
+
+isScanRed :: EdgeT -> Bool
+isScanRed (ScanRed _) = True
+isScanRed _ = False
+
+isTrDep :: EdgeT -> Bool
+isTrDep (TrDep _) = True
+isTrDep _ = False
