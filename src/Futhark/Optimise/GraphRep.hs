@@ -417,6 +417,9 @@ genEdges l_stms edge_fun g = do
     gen_edge name_map (from, node) = [toLEdge (from,to) edgeT  | (dep, edgeT) <- edge_fun node,
                                               Just to <- [M.lookup dep name_map]]
 
+delLEdges :: [DepEdge] -> DepGraphAug
+delLEdges edgs g = pure $ foldl (flip ($)) g (map delLEdge edgs)
+
 depGraphInsertEdges :: [DepEdge] -> DepGraphAug
 depGraphInsertEdges edgs g = return $ insEdges edgs g
 
@@ -447,9 +450,9 @@ mapAcrossNodeTs f = mapAcross f'
         return (ins, n, nodeT', outs)
 
 
--- mapAcrossWithSE :: (DepContext -> DepGraphAug) -> DepGraphAug
--- mapAcrossWithSE f g =
---   applyAugs (map (f . contextFromNode) (nodes g))
+mapAcrossWithSE :: (DepNode -> DepGraphAug) -> DepGraphAug
+mapAcrossWithSE f g =
+  applyAugs (map f (labNodes g)) g
 
 
 

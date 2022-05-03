@@ -342,7 +342,7 @@ updateTrEdgesBetween :: Node -> Node -> DepGraphAug
 updateTrEdgesBetween n1 n2 g = do
     let ns = map (getName . edgeLabel) $ filter (isDep . edgeLabel) $ edgesBetween g n1 n2
     let edgs = mapMaybe insEdge ns
-    pure $ insEdges edgs g
+    depGraphInsertEdges edgs =<< delLEdges edgs g
     where
       (nt1, nt2) = mapT (lab' . context g) (n1, n2)
       insEdge :: VName -> Maybe DepEdge
@@ -362,6 +362,7 @@ pullRearrangeNodeT ts nodeT = case nodeT of
     -- very important: tryFusion does not actually do any fusion - its just a monad-runner
     maybeSoac <- tryFusion (pullRearrange soac ts) scope
     case maybeSoac of
+      -- buggy
       Just (s2, ts) -> pure $ Just $ SoacNode s2 (map (H.addInitialTransforms ts) outputs) aux
       _ -> pure Nothing
   _ -> pure Nothing
@@ -378,7 +379,7 @@ pushRearrangeNodeT trs nodeT = case nodeT of
       _ -> pure Nothing
   _ -> pure Nothing
 
-
+-- THINK VERY CAREFULLY ABOUT FRONT AND BACK TRANSFORMS
 
 
 makeCopies :: NodeT -> FusionEnvM NodeT
@@ -498,11 +499,12 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
     ( SoacNode {}, SoacNode {})
       | null infusible,
         -- null e2s
-         [_] <- L.nub $ map getName edgs, -- no clue why this works like this BUG!!!
-         [ns] <- map getName $ filter isTrDep edgs -> do
-        -- (not . null) ns -> -- in case there are multiple identical transforms
-          let ts = findTransformsBetween ns s1 s2
-          let edgs' = filter ((/=) ns . getName) edgs
+         -- [_] <- L.nub $ map getName edgs, -- no clue why this works like this BUG!!!
+         ns <- map getName $ filter isTrDep edgs,
+         (not . null) ns,
+         [ts] <- L.nub $ map (\x -> findTransformsBetween x s1 s2) ns
+         -> do
+          let edgs' = trace (show (filter (not . isTrDep) edgs)) filter (not . isTrDep) edgs
           newS1m <- pullRearrangeNodeT ts s1
           case newS1m of
             Just newS1 -> fuseNodeT edgs' infusible (newS1, e1s) (s2, e2s)
@@ -510,7 +512,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
               newS2m <- pushRearrangeNodeT ts s2
               case newS2m of
                 Just newS2 ->fuseNodeT edgs' infusible (s1, e1s) (newS2, e2s)
-                _ -> pure Nothing
+                _ -> trace (ppr "WTF") $ pure Nothing
 
     ( SoacNode soac1 pats1 aux1,
       SoacNode soac2 pats2 aux2) ->
@@ -519,7 +521,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
         case (soac1, soac2) of
           ( H.Screma  s_exp1  (ScremaForm scans_1 red_1 lam_1) i1,
             H.Screma  s_exp2  (ScremaForm scans_2 red_2 lam_2) i2)
-            | s_exp1 == s_exp2 && not (any isScanRed edgs) ->
+            | trace (show (s_exp1 == s_exp2)) (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
               let soac = H.Screma s_exp2 (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam) fused_inputs
               in pure $ Just $ SoacNode soac ids (aux1 <> aux2)
                 where
