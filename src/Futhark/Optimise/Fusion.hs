@@ -85,7 +85,7 @@ dontFuseScans m = do
 
 -- | The pass definition.
 fuseSOACs :: Pass SOACS SOACS
-fuseSOACs = 
+fuseSOACs =
   Pass
     { passName = "Fuse SOACs",
       passDescription = "Perform higher-order optimisation, i.e., fusion.",
@@ -103,7 +103,7 @@ fuseConsts outputs stms =
     new_stms <- runFusionEnvM (scopeOf stms) freshFusionEnv (fuseGraphLZ stmList results [])
     return $ stmsFromList new_stms
   where
-    stmList = stmsToList stms
+    stmList = trace (ppr stms) $ stmsToList stms
     results = varsRes outputs
 
 
@@ -316,15 +316,17 @@ pushRearrangeNodeT trs nodeT = case nodeT of
   SoacNode soac outputs aux -> do
     scope <- askScope
     -- BUG only 1-1 fusion
-    let soac' = H.setInputs (map (H.setInputTransforms trs) (H.inputs soac)) soac
+    let soac' = trace (show trs) $  H.setInputs (map (internalizeOutput  . H.setInputTransforms trs) (H.inputs soac)) soac
     maybeSoac <- tryFusion (pushRearrange (map H.inputArray (H.inputs soac)) soac' noTransforms) scope
     case maybeSoac of
-      Just (s2, ts) -> pure $ Just $ SoacNode s2 (map (H.addTransforms ts) outputs) aux
+      Just (s2, ts) ->
+        pure $ Just $ SoacNode s2 (map (internalizeOutput . H.addTransforms ts) outputs) aux
       _ -> pure Nothing
   _ -> pure Nothing
 
 -- THINK VERY CAREFULLY ABOUT FRONT AND BACK TRANSFORMS
 
+--
 
 makeCopies :: NodeT -> FusionEnvM NodeT
 makeCopies (SoacNode soac pats aux) =
@@ -439,7 +441,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
         case (soac1, soac2) of
           ( H.Screma  s_exp1  (ScremaForm scans_1 red_1 lam_1) i1,
             H.Screma  s_exp2  (ScremaForm scans_2 red_2 lam_2) i2)
-            | trace (show (s_exp1 == s_exp2)) (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
+            | trace (show s_exp1 <> "" <> show s_exp2) (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
               let soac = H.Screma s_exp2 (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam) fused_inputs
               in pure $ Just $ SoacNode soac ids (aux1 <> aux2)
                 where

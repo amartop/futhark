@@ -890,17 +890,19 @@ genOutTransformStms inps = do
 inputToIdent :: H.Input -> Ident
 inputToIdent i@(H.Input _ vn tp) = Ident vn tp
 
--- inputToIdent2 :: H.Input -> Ident
--- inputToIdent2 i@(H.Input _ vn tp) = Ident vn (H.inputType i)
+inputToIdent2 :: H.Input -> Ident
+inputToIdent2 i@(H.Input _ vn tp) = Ident vn (H.inputType i)
 
 finalizeNode :: NodeT -> FusionEnvM [Stm SOACS]
 finalizeNode nt = case nt of
   StmNode stm -> pure [stm]
   SoacNode soac outputs aux -> do -- TODO handle these
-    (mapping, outputTrs) <- genOutTransformStms outputs
-    (_, stms) <-  runBuilder $ do
+    let outputs' = outputs
+    (mapping, outputTrs) <- genOutTransformStms outputs'
+    -- let weirdScope = scopeOfPat (basicPat (map inputToIdent outputs))
+    (_, stms) <- runBuilder $ do
       new_soac <- H.toSOAC soac
-      auxing aux $ letBind (basicPat (map inputToIdent outputs)) $ Op new_soac
+      auxing aux $ letBind (basicPat (map inputToIdent outputs')) $ Op new_soac
     return $ stmsToList (substituteNames mapping stms <> outputTrs)
   RNode vn  -> pure []
   InNode vn -> pure []
