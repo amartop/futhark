@@ -15,7 +15,8 @@ module Futhark.Optimise.Fusion.LoopKernel
     tryFusion,
     pullRearrange,
     pushRearrange,
-    iswim
+    iswim,
+    pullOutputTransforms
   )
 where
 

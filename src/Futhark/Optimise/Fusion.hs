@@ -30,7 +30,7 @@ import Control.Monad.State
 import Futhark.IR.SOACS.SOAC (SOAC(Screma))
 import Futhark.Analysis.HORep.SOAC
 import Data.DList (apply)
-import Futhark.Optimise.Fusion.LoopKernel (pullRearrange, tryFusion, pushRearrange, setInputs)
+import Futhark.Optimise.Fusion.LoopKernel (pullRearrange, tryFusion, pushRearrange, setInputs, pullOutputTransforms)
 
 -- extra util - scans reduces are "a->a->a" - so half of those are the amount of inputs
 scanInput :: [Scan SOACS] -> Int
@@ -124,11 +124,11 @@ linearizeGraph g = do
   return $ concat stms
 
 doAllFusion :: DepGraphAug
-doAllFusion = 
-  applyAugs [keepTrying doVerticalFusion, 
-            doHorizontalFusion, 
-            removeUnusedOutputs, 
-            makeCopiesOfConsAliased, 
+doAllFusion =
+  applyAugs [keepTrying doVerticalFusion,
+            doHorizontalFusion,
+            removeUnusedOutputs,
+            makeCopiesOfConsAliased,
             runInnerFusion]
 
 doVerticalFusion :: DepGraphAug
@@ -158,7 +158,7 @@ vFusionFeasability g n1 n2 =
 
 hFusionFeasability :: DepGraph -> Node -> Node -> FusionEnvM Bool
 hFusionFeasability = unreachableEitherDir
- 
+
 tryFuseNodeInGraph :: DepNode -> DepGraphAug
 tryFuseNodeInGraph node_to_fuse g =
   if gelem node_to_fuse_id g
@@ -231,7 +231,7 @@ pullRearrangeNodeT ts nodeT = case nodeT of
   SoacNode soac outputs aux -> do
     scope <- askScope
     -- note: tryFusion does not actually do any fusion - its just a monad-runner
-    maybeSoac <- tryFusion (pullRearrange soac ts) scope
+    maybeSoac <- tryFusion (pullOutputTransforms soac ts) scope
     case maybeSoac of
       -- plausible source of bugs
       Just (s2, ts) -> pure $ Just $ SoacNode s2 (map (H.addInitialTransforms ts) outputs) aux
@@ -392,29 +392,25 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
                         (SoacNode stream1 (map H.identInput is_extra_1' <> pats1) aux1, e1s)
                         (s2, e2s)
                   else pure Nothing
-          -- ( Futhark.Screma s_exp1 i1 sform1,
-          --   Futhark.Screma s_exp2 i2 sform2)
-          --     |
-          --       Just _ <- isScanomapSOAC sform1,
-          --       Just _ <- isScanomapSOAC sform2,
-          --       s_exp1 == s_exp2,
-          --       any isScanRed edgs
-          --     -> do
-          --       doFusion <- gets fuseScans
-          --       if not doFusion then return Nothing else do
-          --         mstream1 <- soacToStream soac1
-          --         mstream2 <- soacToStream soac2
-          --         case (mstream1, mstream2) of
-          --           (Just (stream1, is_extra_1), Just (stream2, is_extra_2)) -> do
-          --             is_extra_1' <- mapM (newIdent "unused" . identType) is_extra_1
-          --             is_extra_2' <- mapM (newIdent "unused" . identType) is_extra_2
-          --             fuseStms edgs infusible
-          --               (Let (basicPat is_extra_1' <> pats1) aux1 (Op stream1))
-          --               (Let (basicPat is_extra_2' <> pats2) aux2 (Op stream2))
-          --           _ -> return Nothing
+          ( H.Screma s_exp1 sform1 i1,
+            H.Screma s_exp2 sform2 i2)
+              |
+                Just _ <- isScanomapSOAC sform1,
+                s_exp1 == s_exp2,
+                any isScanRed edgs
+              -> do
+                doFusion <- gets fuseScans
+                if not doFusion then return Nothing else do
+                  (stream1, is_extra_1) <- soacToStream soac1
+                  (stream2, is_extra_2) <- soacToStream soac2
+                  is_extra_1' <- mapM (newIdent "unused" . identType) is_extra_1
+                  is_extra_2' <- mapM (newIdent "unused" . identType) is_extra_2
+                  fuseNodeT edgs infusible
+                    (SoacNode stream1 (map identInput is_extra_1' <> pats1) aux1, e1s)
+                    (SoacNode (toSeqStream stream2) (map identInput is_extra_2' <> pats2) aux2, e2s)
           -- ( H.Stream s_exp1 sform1 nes1 lam1 i1,
           --   H.Stream s_exp2 sform2 nes2 lam2 i2)
-          --   | getStreamOrder sform1 /= getStreamOrder sform2 ->
+          --   | H.getStreamOrder sform1 /= H.getStreamOrder sform2 ->
           --     let s1' = toSeqStream soac1 in
           --     let s2' = toSeqStream soac2 in
           --     fuseNodeT edgs infusible
@@ -423,7 +419,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
           ( H.Stream s_exp1 sform1 lam1 nes1 i1,
             H.Stream s_exp2 sform2 lam2 nes2 i2)
             | (sform1 == Sequential)  /= (sform2 == Sequential) ->
-              pure Nothing
+              trace "OHNO" $ pure Nothing
           ( H.Stream s_exp1 sform1 lam1 nes1 i1,
             H.Stream s_exp2 sform2 lam2 nes2 i2) -> do
               let chunk1 = head $ lambdaParams lam1
@@ -640,7 +636,7 @@ runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
   SoacNode soac pats aux -> do
         let lam = H.lambda soac
         newbody <- localScope (scopeOf lam) $ case soac of
-          H.Screma {} -> dontFuseScans $ doFusionInner (lambdaBody lam) []
+          H.Stream {} -> dontFuseScans $ doFusionInner (lambdaBody lam) []
           _           -> doFuseScans   $ doFusionInner (lambdaBody lam) []
         let newLam = lam {lambdaBody = newbody}
         let newNode = SoacNode (H.setLambda newLam soac) pats aux
@@ -722,10 +718,6 @@ makeCopiesOfConsAliased = mapAcross copyAlised
 --             pure (incoming, n, nodeT2, outputs)
 --       _ -> pure ctx
 
--- copied, todo: use as import if possible
-getStreamOrder :: StreamForm rep -> StreamOrd
-getStreamOrder (Parallel o _ _) = o
-getStreamOrder Sequential = InOrder
 
 -- also copied, todo: use as import if possible
 toSeqStream :: H.SOAC SOACS -> H.SOAC SOACS
