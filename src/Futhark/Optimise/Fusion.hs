@@ -302,7 +302,6 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
             case newS2m of
               Just newS2 ->fuseNodeT edgs' infusible (s1, e1s) (newS2, e2s)
               _ -> pure Nothing
-
     ( SoacNode soac1 pats1 aux1,
       SoacNode soac2 pats2 aux2) ->
         let (o1, o2) = mapT (map H.inputArray) (pats1, pats2) in
@@ -719,21 +718,21 @@ makeCopiesOfConsAliased = mapAcross copyAlised
 --       _ -> pure ctx
 
 
--- also copied, todo: use as import if possible
+-- copied
 toSeqStream :: H.SOAC SOACS -> H.SOAC SOACS
 toSeqStream s@(H.Stream _ Sequential _ _ _) = s
 toSeqStream (H.Stream w  Parallel {} l acc is) =
   H.Stream w Sequential l acc is
 toSeqStream _ = error "toSeqStream expects a stream, but given a SOAC."
 
--- also copied, todo: use as import if possible
+-- also copied
 mergeForms :: StreamForm SOACS -> StreamForm SOACS -> StreamForm SOACS
 mergeForms Sequential Sequential =  Sequential
 mergeForms (Parallel _ comm2 lam2r) (Parallel o1 comm1 lam1r) =
   Parallel o1 (comm1 <> comm2) (mergeReduceOps lam1r lam2r)
 mergeForms s _ = error "fusing sequential"
 
--- also copied, todo: use as import if possible
+-- also copied
 mergeReduceOps :: Lambda rep -> Lambda rep -> Lambda rep
 mergeReduceOps (Lambda par1 bdy1 rtp1) (Lambda par2 bdy2 rtp2) =
   let body' =

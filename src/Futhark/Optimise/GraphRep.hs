@@ -398,7 +398,7 @@ iswim = mapAcrossWithSE f
           maybeISWIM <- LK.tryFusion (LK.iswim Nothing soac H.noTransforms) scope
           case  maybeISWIM of
             Just (newSOAC, newts) ->
-              trace (show $ H.width newSOAC) $
+              trace (show newts) $
               updateNode n (const (Just $ SoacNode newSOAC (map (internalizeOutput . H.addTransforms newts) ots) aux)) g
                 >>= updateTrEdges n
                 >>= updateContext n
@@ -406,11 +406,11 @@ iswim = mapAcrossWithSE f
         _ -> pure g
 
     updateContext :: Node -> DepGraphAug
-    updateContext n g = 
+    updateContext n g =
       case match n g of
         (Just (ins,_,lab,outs), g') -> do
           let newins = map (\(e,n2) -> if isScanRed e then (Dep (getName e), n2) else (e,n2)) ins
-          pure $ (&) (newins, n, lab, outs) g' 
+          pure $ (&) (newins, n, lab, outs) g'
         _ -> pure g
 
 addTransforms :: DepGraphAug
@@ -471,7 +471,7 @@ nodeToSoacNode n@(StmNode s@(Let pats aux op)) = case op of
     case maybeSoac of
       Right hsoac -> pure $ SoacNode hsoac (inputFromPat pats) aux
       Left H.NotSOAC -> pure n
-  DoLoop {} -> 
+  DoLoop {} ->
     pure $ DoNode s []
   If {} ->
     pure $ IfNode s []
@@ -665,7 +665,7 @@ getOutputs node = case node of
   (InNode name) -> [name]
   (IfNode stm nodes) -> getStmNames stm
   (DoNode stm nodes) -> getStmNames stm
-  (FinalNode stms _) -> error "Final nodes cannot generate edges" 
+  (FinalNode stms _) -> error "Final nodes cannot generate edges"
   (SoacNode _ outputs _) -> map H.inputArray outputs
 
 mapT :: (a -> b) -> (a,a) -> (b,b) -- tuple map
@@ -727,6 +727,7 @@ finalizeNode nt = case nt of
 isDep :: EdgeT -> Bool -- Is there a possibility of fusion?
 isDep (Dep _) = True
 isDep (ScanRed _) = True
+isDep (Res _) = True
 isDep _ = False
 
 isInf :: (Node, Node, EdgeT) -> Bool -- No possibility of fusion
@@ -734,7 +735,7 @@ isInf (_,_,e) = case e of
   InfDep _ -> True
   Cons _ -> False
   Fake _ -> True -- this is infusible to avoid simultaneous cons/dep edges
-  TrDep _ -> False 
+  TrDep _ -> False
   _ -> False
 
 isCons :: EdgeT -> Bool
