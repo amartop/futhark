@@ -246,8 +246,8 @@ pushRearrangeNodeT trs nodeT = case nodeT of
     let soac' = trace (show trs) $  H.setInputs (map (internalizeOutput  . H.setInputTransforms trs) (H.inputs soac)) soac
     maybeSoac <- tryFusion (pushRearrange (map H.inputArray (H.inputs soac)) soac' noTransforms) scope
     case maybeSoac of
-      Just (s2, ts) ->
-        pure $ Just $ SoacNode s2 (map (internalizeOutput . H.addTransforms ts) outputs) aux
+      Just (s2, ts) | all (H.nullTransforms . H.inputTransforms) (H.inputs s2) ->
+        pure $ Just $ SoacNode s2 (map (internalizeAndAdd ts) outputs) aux
       _ -> pure Nothing
   _ -> pure Nothing
 
@@ -291,6 +291,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
       | null infusible,
         ns <- map getName $ filter isTrDep edgs,
         (not . null) ns,
+        null e2s,
         [ts] <- L.nub $ map (\x -> findTransformsBetween x s1 s2) ns
         -> do
         let edgs' = trace (show (filter (not . isTrDep) edgs)) filter (not . isTrDep) edgs
@@ -310,7 +311,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
 -- Screma-Screma fusion
           ( H.Screma  s_exp1  (ScremaForm scans_1 red_1 lam_1) i1,
             H.Screma  s_exp2  (ScremaForm scans_2 red_2 lam_2) i2)
-            | trace (show s_exp1 <> "" <> show s_exp2) (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
+            | (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
               let soac = H.Screma s_exp2 (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam) fused_inputs
               in pure $ Just $ SoacNode soac ids (aux1 <> aux2)
                 where
@@ -380,8 +381,8 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
             where
               (lam, fused_inputs) = vFuseLambdas [] lam_1 i1 o1 lam_2 i2 o2
           ( H.Screma s_exp1 sform1 i1,
-            H.Stream {})
-              |  Just _ <- isMapSOAC sform1 -> do
+            H.Stream s_exp2 _ _ _ _)
+              |  Just _ <- isMapSOAC sform1, s_exp1 == s_exp2 -> do
                 doFusion <- gets fuseScans
                 if not doFusion then return Nothing else do
                   (stream1, is_extra_1) <- soacToStream soac1
@@ -393,8 +394,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
                   else pure Nothing
           ( H.Screma s_exp1 sform1 i1,
             H.Screma s_exp2 sform2 i2)
-              |
-                Just _ <- isScanomapSOAC sform1,
+              | Just _ <- isScanomapSOAC sform1,
                 s_exp1 == s_exp2,
                 any isScanRed edgs
               -> do
@@ -418,9 +418,10 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
           ( H.Stream s_exp1 sform1 lam1 nes1 i1,
             H.Stream s_exp2 sform2 lam2 nes2 i2)
             | (sform1 == Sequential)  /= (sform2 == Sequential) ->
-              trace "OHNO" $ pure Nothing
+              pure Nothing
           ( H.Stream s_exp1 sform1 lam1 nes1 i1,
-            H.Stream s_exp2 sform2 lam2 nes2 i2) -> do
+            H.Stream s_exp2 sform2 lam2 nes2 i2)
+            | s_exp1 == s_exp2-> do
               let chunk1 = head $ lambdaParams lam1
               let chunk2 = head $ lambdaParams lam2
               let mmap = makeMap [paramName chunk2] [paramName chunk1]
@@ -620,6 +621,9 @@ removeOutputsExcept toKeep s = case s of
 runInnerFusion :: DepGraphAug -- do fusion on the inner lambdas
 runInnerFusion = mapAcross runInnerFusionOnContext
 
+printgraph :: DepGraphAug
+printgraph g = trace (pprg g) $ pure g
+
 runInnerFusionOnContext :: DepContext -> FusionEnvM DepContext
 runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
   DoNode (Let pat aux (DoLoop params form body)) toFuse ->
@@ -632,7 +636,8 @@ runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
     b2' <- doFusionWithDelayed b2 [] toFuse
     rb2' <- renameBody b2'
     pure (incomming, node, IfNode (Let pat aux (If sz b1' rb2' dec)) [], outgoing)
-  SoacNode soac pats aux -> do
+  SoacNode soac pats aux
+    | p:_ <- pats, inputRank p > 0 -> do
         let lam = H.lambda soac
         newbody <- localScope (scopeOf lam) $ case soac of
           H.Stream {} -> dontFuseScans $ doFusionInner (lambdaBody lam) []
@@ -647,7 +652,7 @@ runInnerFusionOnContext c@(incomming, node, nodeT, outgoing) = case nodeT of
       do
         let g = emptyGraph stms results (inputs <> extraInputs)
         -- highly temporary and non-thought-out
-        g' <- applyAugs [handleNodes extraNodes,makeMapping, initialGraphConstruction, doAllFusion] g
+        g' <- applyAugs [handleNodes extraNodes,makeMapping, initialGraphConstruction, printgraph, doAllFusion] g
         new_stms <- trace (pprg g') $ linearizeGraph g'
         return b {bodyStms = stmsFromList new_stms}
       where

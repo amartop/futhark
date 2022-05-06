@@ -382,6 +382,14 @@ nodeOutputTransforms vname nodeT = case nodeT of
 internalizeOutput :: H.Input -> H.Input
 internalizeOutput i@(H.Input ts name tp) = H.Input ts name (H.inputType i)
 
+internalizeAndAdd :: H.ArrayTransforms -> H.Input -> H.Input
+internalizeAndAdd ts i = H.setInputTransforms newTs $  internalizeOutput temporaryI
+  where
+    oldTs = H.inputTransforms i
+    temporaryI = H.setInputTransforms ts i
+    newTs = ts <> oldTs
+
+
 findTransformsBetween :: VName -> NodeT -> NodeT -> H.ArrayTransforms
 findTransformsBetween vname n1 n2 =
   let outs = nodeOutputTransforms vname n1 in
