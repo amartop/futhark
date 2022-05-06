@@ -141,7 +141,7 @@ doHorizontalFusion g = applyAugs (map horizontalFusionOnNode (nodes g)) g
 horizontalFusionOnNode :: Node -> DepGraphAug
 horizontalFusionOnNode node g = tryFuseAll incoming_nodes g
   where
-    (incoming_nodes, _) = unzip $ lpre g node
+    (incoming_nodes, _) = unzip $ filter (isDep . snd) $ lpre g node
 
 tryFuseAll :: [Node] -> DepGraphAug
 tryFuseAll nodes_list = applyAugs (map (uncurry hTryFuseNodesInGraph) pairs)
@@ -251,6 +251,8 @@ pushRearrangeNodeT trs nodeT = case nodeT of
       _ -> pure Nothing
   _ -> pure Nothing
 
+
+-- TODO supply previously fuse edges of first node
 makeCopies :: NodeT -> FusionEnvM NodeT
 makeCopies (SoacNode soac pats aux) =
   do
@@ -291,7 +293,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
       | null infusible,
         ns <- map getName $ filter isTrDep edgs,
         (not . null) ns,
-        null e2s,
+        not $ any isDep e2s,
         [ts] <- L.nub $ map (\x -> findTransformsBetween x s1 s2) ns
         -> do
         let edgs' = trace (show (filter (not . isTrDep) edgs)) filter (not . isTrDep) edgs
@@ -303,6 +305,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
             case newS2m of
               Just newS2 ->fuseNodeT edgs' infusible (s1, e1s) (newS2, e2s)
               _ -> pure Nothing
+    (_, _) | any isTrDep edgs -> pure Nothing
     ( SoacNode soac1 pats1 aux1,
       SoacNode soac2 pats2 aux2) ->
         let (o1, o2) = mapT (map H.inputArray) (pats1, pats2) in
@@ -311,7 +314,7 @@ fuseNodeT edgs infusible (s1, e1s) (s2, e2s) =
 -- Screma-Screma fusion
           ( H.Screma  s_exp1  (ScremaForm scans_1 red_1 lam_1) i1,
             H.Screma  s_exp2  (ScremaForm scans_2 red_2 lam_2) i2)
-            | (s_exp1 == s_exp2) && not (any isScanRed edgs) ->
+            | s_exp1 == s_exp2, not (any isScanRed edgs) ->
               let soac = H.Screma s_exp2 (ScremaForm (scans_1 ++ scans_2) (red_1 ++ red_2) lam) fused_inputs
               in pure $ Just $ SoacNode soac ids (aux1 <> aux2)
                 where

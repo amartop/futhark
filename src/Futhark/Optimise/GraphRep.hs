@@ -33,6 +33,7 @@ import Debug.Trace (trace)
 import Data.Maybe (isJust, isNothing, mapMaybe)
 import Futhark.Analysis.HORep.SOAC (lambda)
 import System.Posix.Internals (puts)
+import qualified Data.Containers.ListUtils as L
 
 
 data EdgeT =
@@ -384,6 +385,7 @@ internalizeOutput i@(H.Input ts name tp) = H.Input ts name (H.inputType i)
 
 internalizeAndAdd :: H.ArrayTransforms -> H.Input -> H.Input
 internalizeAndAdd ts i = H.setInputTransforms newTs $  internalizeOutput temporaryI
+
   where
     oldTs = H.inputTransforms i
     temporaryI = H.setInputTransforms ts i
@@ -602,7 +604,7 @@ makeScanInfusible g = return $ emap change_node_to_idep g
 -- find dependencies - either fusable or infusable. edges are generated based on these
 
 fusableInputs :: Stm SOACS -> [VName]
-fusableInputs (Let _ _ expr) = fusableInputsFromExp expr
+fusableInputs (Let _ _ expr) = L.nub $ fusableInputsFromExp expr
 
 fusableInputsFromExp :: Exp SOACS -> [VName]
 fusableInputsFromExp (If _ b1 b2 _) =
@@ -618,7 +620,7 @@ fusableInputsFromExp (Op soac) = case soac of
 fusableInputsFromExp _ = []
 
 infusableInputs :: Stm SOACS -> [VName]
-infusableInputs (Let _ aux expr) = infusableInputsFromExp expr ++ namesToList (freeIn aux)
+infusableInputs (Let _ aux expr) = L.nub $ infusableInputsFromExp expr ++ namesToList (freeIn aux)
 
 infusableInputsFromExp :: Exp SOACS -> [VName]
 infusableInputsFromExp (Op soac) = case soac of
